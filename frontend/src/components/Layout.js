@@ -35,9 +35,8 @@ const Layout = ({ children, user }) => {
     );
   }
 
-  if (user?.role === 'admin') {
-    menuItems.push({ path: '/settings', icon: GearSix, label: 'Settings', testId: 'nav-settings' });
-  }
+  // All users can access settings (for message templates)
+  menuItems.push({ path: '/settings', icon: GearSix, label: 'Settings', testId: 'nav-settings' });
 
   return (
     <div className="flex min-h-screen bg-zinc-950">

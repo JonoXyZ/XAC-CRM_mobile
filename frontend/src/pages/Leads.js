@@ -9,7 +9,7 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Phone, Envelope, Tag, PencilSimple, CalendarPlus, SquaresFour, Table } from '@phosphor-icons/react';
+import { Plus, Phone, Envelope, Tag, PencilSimple, CalendarPlus, SquaresFour, Table, Star } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -58,6 +58,8 @@ const Leads = ({ user }) => {
     scheduled_at: '',
     notes: ''
   });
+  const [leadScore, setLeadScore] = useState(0);
+  const [showScoreModal, setShowScoreModal] = useState(false);
 
   useEffect(() => {
     fetchLeads();
@@ -148,6 +150,29 @@ const Leads = ({ user }) => {
       fetchLeads();
     } catch (error) {
       toast.error('Failed to book appointment');
+    }
+  };
+
+  const handleUpdateScore = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(
+        `${API_URL}/api/leads/${selectedLead.id}/score`,
+        leadScore,
+        {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          params: { score: leadScore }
+        }
+      );
+      toast.success('Lead score updated');
+      setShowScoreModal(false);
+      fetchLeads();
+    } catch (error) {
+      toast.error('Failed to update score');
     }
   };
 
@@ -301,20 +326,43 @@ const Leads = ({ user }) => {
                                 data-testid={`lead-card-${lead.id}`}
                               >
                                 <div className="flex justify-between items-start mb-2">
-                                  <h4 className="font-semibold text-zinc-100">
-                                    {lead.name} {lead.surname || ''}
-                                  </h4>
-                                  <Button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedLead(lead);
-                                      setShowEditLeadModal(true);
-                                    }}
-                                    data-testid={`edit-lead-${lead.id}`}
-                                    className="opacity-0 group-hover:opacity-100 p-1 h-auto bg-zinc-800 hover:bg-zinc-700"
-                                  >
-                                    <PencilSimple size={16} />
-                                  </Button>
+                                  <div className="flex-1">
+                                    <h4 className="font-semibold text-zinc-100">
+                                      {lead.name} {lead.surname || ''}
+                                    </h4>
+                                    {lead.score > 0 && (
+                                      <div className="flex items-center gap-1 mt-1">
+                                        <Star size={14} weight="fill" className="text-amber-500" />
+                                        <span className="text-xs text-amber-500 font-semibold">Score: {lead.score}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <Button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedLead(lead);
+                                        setLeadScore(lead.score || 0);
+                                        setShowScoreModal(true);
+                                      }}
+                                      data-testid={`score-lead-${lead.id}`}
+                                      className="opacity-0 group-hover:opacity-100 p-1 h-auto bg-amber-500 hover:bg-amber-600"
+                                      title="Score Lead"
+                                    >
+                                      <Star size={14} weight="bold" />
+                                    </Button>
+                                    <Button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedLead(lead);
+                                        setShowEditLeadModal(true);
+                                      }}
+                                      data-testid={`edit-lead-${lead.id}`}
+                                      className="opacity-0 group-hover:opacity-100 p-1 h-auto bg-zinc-800 hover:bg-zinc-700"
+                                    >
+                                      <PencilSimple size={14} />
+                                    </Button>
+                                  </div>
                                 </div>
                                 <div className="space-y-1 text-xs text-zinc-400">
                                   {lead.phone && (
@@ -378,6 +426,7 @@ const Leads = ({ user }) => {
                   <th className="p-4">Email</th>
                   <th className="p-4">Source</th>
                   <th className="p-4">Owner</th>
+                  <th className="p-4">Score</th>
                   <th className="p-4">Stage</th>
                   <th className="p-4">Actions</th>
                 </tr>
@@ -392,6 +441,16 @@ const Leads = ({ user }) => {
                     <td className="p-4 text-zinc-300">{lead.email || '-'}</td>
                     <td className="p-4 text-zinc-300">{lead.source}</td>
                     <td className="p-4 text-zinc-300">{lead.owner_name || '-'}</td>
+                    <td className="p-4">
+                      {lead.score > 0 ? (
+                        <div className="flex items-center gap-1">
+                          <Star size={16} weight="fill" className="text-amber-500" />
+                          <span className="font-semibold text-amber-500">{lead.score}</span>
+                        </div>
+                      ) : (
+                        <span className="text-zinc-600">-</span>
+                      )}
+                    </td>
                     <td className="p-4">
                       <Select
                         value={lead.stage}
@@ -410,6 +469,18 @@ const Leads = ({ user }) => {
                     </td>
                     <td className="p-4">
                       <div className="flex gap-2">
+                        <Button
+                          onClick={() => {
+                            setSelectedLead(lead);
+                            setLeadScore(lead.score || 0);
+                            setShowScoreModal(true);
+                          }}
+                          data-testid={`table-score-${lead.id}`}
+                          className="p-2 bg-amber-500 hover:bg-amber-600"
+                          title="Score Lead"
+                        >
+                          <Star size={16} weight="bold" />
+                        </Button>
                         <Button
                           onClick={() => {
                             setSelectedLead(lead);
@@ -803,6 +874,63 @@ const Leads = ({ user }) => {
               </div>
             </Tabs>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Score Lead Modal */}
+      <Dialog open={showScoreModal} onOpenChange={setShowScoreModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="score-lead-modal">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-zinc-50">Score Lead</DialogTitle>
+          </DialogHeader>
+          {selectedLead && (
+            <form onSubmit={handleUpdateScore} className="space-y-4">
+              <div className="p-3 bg-zinc-950 rounded-md border border-zinc-800">
+                <p className="text-sm text-zinc-400">Lead:</p>
+                <p className="font-semibold text-zinc-100">
+                  {selectedLead.name} {selectedLead.surname || ''}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Lead Score (0-100)</Label>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={leadScore}
+                    onChange={(e) => setLeadScore(parseInt(e.target.value))}
+                    data-testid="score-slider"
+                    className="flex-1 h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  />
+                  <div className="flex items-center gap-2 min-w-[80px] justify-center bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2">
+                    <Star size={20} weight="fill" className="text-amber-500" />
+                    <span className="text-2xl font-bold text-amber-500">{leadScore}</span>
+                  </div>
+                </div>
+                <p className="text-xs text-zinc-500 mt-2">
+                  Score leads based on quality, engagement, and conversion likelihood
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  onClick={() => setShowScoreModal(false)}
+                  data-testid="cancel-score-button"
+                  className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  data-testid="submit-score-button"
+                  className="flex-1 bg-amber-500 text-zinc-950 font-bold hover:bg-amber-600"
+                >
+                  Update Score
+                </Button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </Layout>

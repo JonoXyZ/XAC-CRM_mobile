@@ -34,6 +34,7 @@ const Settings = ({ user }) => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [whatsappConnected, setWhatsappConnected] = useState(false);
+  const [checkingWhatsApp, setCheckingWhatsApp] = useState(false);
   const [newTemplate, setNewTemplate] = useState({
     name: '',
     content: ''
@@ -53,6 +54,7 @@ const Settings = ({ user }) => {
       fetchUsers();
     }
     fetchMessageTemplates();
+    checkWhatsAppStatus();
   }, [user]);
 
   const fetchSettings = async () => {
@@ -88,6 +90,21 @@ const Settings = ({ user }) => {
       setMessageTemplates(response.data);
     } catch (error) {
       console.error('Failed to fetch message templates');
+    }
+  };
+
+  const checkWhatsAppStatus = async () => {
+    setCheckingWhatsApp(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/whatsapp/status`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setWhatsappConnected(response.data.connected);
+    } catch (error) {
+      console.error('Failed to check WhatsApp status');
+    } finally {
+      setCheckingWhatsApp(false);
     }
   };
 
@@ -212,55 +229,70 @@ const Settings = ({ user }) => {
     }
   };
 
-  if (user?.role !== 'admin') {
+  if (user?.role !== 'admin' && user?.role !== 'consultant' && user?.role !== 'assistant' && user?.role !== 'sales_manager' && user?.role !== 'club_manager') {
     return (
       <Layout user={user}>
         <div className="p-4 sm:p-6 lg:p-8">
           <div className="text-center py-12">
             <GearSix size={64} className="mx-auto text-zinc-700 mb-4" />
             <h2 className="text-2xl font-bold text-zinc-400">Access Denied</h2>
-            <p className="text-zinc-500 mt-2">Only administrators can access settings</p>
+            <p className="text-zinc-500 mt-2">Unable to load settings</p>
           </div>
         </div>
       </Layout>
     );
   }
 
+  const isAdmin = user?.role === 'admin';
+  const canAccessMessages = true; // All roles can access message templates
+
   return (
     <Layout user={user}>
       <div className="p-4 sm:p-6 lg:p-8" data-testid="settings-page">
         <div className="mb-6">
           <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-zinc-50" data-testid="settings-title">
-            Admin Settings
+            {isAdmin ? 'Admin Settings' : 'Settings'}
           </h1>
-          <p className="mt-2 text-base text-zinc-400">Manage system configuration and integrations</p>
+          <p className="mt-2 text-base text-zinc-400">
+            {isAdmin ? 'Manage system configuration and integrations' : 'Manage your preferences and message templates'}
+          </p>
         </div>
 
-        <Tabs defaultValue="integrations" className="space-y-6">
+        <Tabs defaultValue={isAdmin ? "integrations" : "messages"} className="space-y-6">
           <TabsList className="bg-zinc-900 border border-zinc-800">
-            <TabsTrigger value="integrations" data-testid="integrations-tab">
-              <WhatsappLogo size={20} className="mr-2" />
-              Integrations
-            </TabsTrigger>
-            <TabsTrigger value="users" data-testid="users-tab">
-              <UsersIcon size={20} className="mr-2" />
-              User Management
-            </TabsTrigger>
+            {isAdmin && (
+              <>
+                <TabsTrigger value="integrations" data-testid="integrations-tab">
+                  <WhatsappLogo size={20} className="mr-2" />
+                  Integrations
+                </TabsTrigger>
+                <TabsTrigger value="users" data-testid="users-tab">
+                  <UsersIcon size={20} className="mr-2" />
+                  User Management
+                </TabsTrigger>
+              </>
+            )}
             <TabsTrigger value="messages" data-testid="messages-tab">
               <FileText size={20} className="mr-2" />
               Message Templates
             </TabsTrigger>
-            <TabsTrigger value="automation" data-testid="automation-tab">
-              <GearSix size={20} className="mr-2" />
-              Automation
-            </TabsTrigger>
-            <TabsTrigger value="branding" data-testid="branding-tab">
-              <Image size={20} className="mr-2" />
-              Branding
-            </TabsTrigger>
+            {isAdmin && (
+              <>
+                <TabsTrigger value="automation" data-testid="automation-tab">
+                  <GearSix size={20} className="mr-2" />
+                  Automation
+                </TabsTrigger>
+                <TabsTrigger value="branding" data-testid="branding-tab">
+                  <Image size={20} className="mr-2" />
+                  Branding
+                </TabsTrigger>
+              </>
+            )}
           </TabsList>
 
-          <TabsContent value="integrations" className="space-y-6">
+          {isAdmin && (
+            <>
+              <TabsContent value="integrations" className="space-y-6">
             <Card className="stat-card p-6" data-testid="whatsapp-integration-card">
               <div className="flex items-start gap-4">
                 <WhatsappLogo size={48} weight="duotone" className="text-lime-400" />
@@ -399,8 +431,35 @@ const Settings = ({ user }) => {
               </div>
             </Card>
           </TabsContent>
+            </>
+          )}
 
           <TabsContent value="messages" className="space-y-6">
+            <Card className="stat-card p-6 mb-6" data-testid="whatsapp-status-card">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <WhatsappLogo size={32} weight="duotone" className={whatsappConnected ? 'text-emerald-500' : 'text-zinc-600'} />
+                  <div>
+                    <h3 className="text-lg font-semibold text-zinc-100">WhatsApp Integration</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className={`w-2 h-2 rounded-full ${whatsappConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                      <span className="text-sm text-zinc-400">
+                        {checkingWhatsApp ? 'Checking...' : whatsappConnected ? 'Connected & Active' : 'Not Connected'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  onClick={checkWhatsAppStatus}
+                  disabled={checkingWhatsApp}
+                  data-testid="refresh-whatsapp-status"
+                  className="bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+                >
+                  {checkingWhatsApp ? 'Checking...' : 'Refresh Status'}
+                </Button>
+              </div>
+            </Card>
+
             <div className="flex justify-between items-center">
               <h3 className="text-2xl font-bold text-zinc-100">Message Templates</h3>
               <Button
@@ -459,7 +518,9 @@ const Settings = ({ user }) => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="automation" className="space-y-6">
+          {isAdmin && (
+            <>
+              <TabsContent value="automation" className="space-y-6">
             <Card className="stat-card p-6" data-testid="automation-settings-card">
               <h3 className="text-2xl font-bold text-zinc-100 mb-4">Automation Rules</h3>
               <div className="space-y-6">
@@ -555,6 +616,8 @@ const Settings = ({ user }) => {
               </div>
             </Card>
           </TabsContent>
+            </>
+          )}
         </Tabs>
       </div>
 
