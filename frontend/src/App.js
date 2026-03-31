@@ -4,6 +4,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Leads from './pages/Leads';
 import Appointments from './pages/Appointments';
+import Reports from './pages/Reports';
+import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import { Toaster } from './components/ui/sonner';
 import './App.css';
@@ -50,6 +52,22 @@ function App() {
           element={
             <ProtectedRoute>
               <Appointments user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute>
+              <Reports user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analytics"
+          element={
+            <ProtectedRoute>
+              <Analytics user={user} />
             </ProtectedRoute>
           }
         />

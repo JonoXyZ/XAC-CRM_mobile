@@ -145,6 +145,16 @@ class WhatsAppMessageRequest(BaseModel):
     phone_number: str
     message: str
     lead_id: Optional[str] = None
+    template_id: Optional[str] = None
+
+class MessageTemplateCreate(BaseModel):
+    name: str
+    content: str
+    user_id: Optional[str] = None
+
+class MessageTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    content: Optional[str] = None
 
 class AppointmentCreate(BaseModel):
     lead_id: str
@@ -778,6 +788,224 @@ async def whatsapp_status():
         "connected": False,
         "message": "WhatsApp Web automation not configured"
     }
+
+@api_router.post("/message-templates")
+async def create_message_template(template: MessageTemplateCreate, current_user: dict = Depends(get_current_user)):
+    template_doc = {
+        "name": template.name,
+        "content": template.content,
+        "user_id": template.user_id or str(current_user["_id"]),
+        "created_by": str(current_user["_id"]),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    result = await db.message_templates.insert_one(template_doc)
+    return {"success": True, "template_id": str(result.inserted_id)}
+
+@api_router.get("/message-templates")
+async def get_message_templates(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] == UserRole.ADMIN:
+        templates = await db.message_templates.find({}).to_list(1000)
+    else:
+        templates = await db.message_templates.find({"user_id": str(current_user["_id"])}).to_list(1000)
+    
+    user_ids = list(set([t["user_id"] for t in templates]))
+    users_dict = {}
+    if user_ids:
+        users = await db.users.find({"_id": {"$in": [ObjectId(uid) for uid in user_ids]}}).to_list(1000)
+        users_dict = {str(u["_id"]): u["name"] for u in users}
+    
+    return [
+        {
+            "id": str(t["_id"]),
+            "name": t["name"],
+            "content": t["content"],
+            "user_id": t["user_id"],
+            "user_name": users_dict.get(t["user_id"]),
+            "created_at": t["created_at"]
+        }
+        for t in templates
+    ]
+
+@api_router.put("/message-templates/{template_id}")
+async def update_message_template(
+    template_id: str,
+    template_update: MessageTemplateUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    update_data = {k: v for k, v in template_update.model_dump().items() if v is not None}
+    
+    await db.message_templates.update_one(
+        {"_id": ObjectId(template_id)},
+        {"$set": update_data}
+    )
+    
+    return {"success": True}
+
+@api_router.delete("/message-templates/{template_id}")
+async def delete_message_template(template_id: str, current_user: dict = Depends(get_current_user)):
+    await db.message_templates.delete_one({"_id": ObjectId(template_id)})
+    return {"success": True}
+
+@api_router.put("/leads/{lead_id}/score")
+async def update_lead_score(lead_id: str, score: int, current_user: dict = Depends(get_current_user)):
+    await db.leads.update_one(
+        {"_id": ObjectId(lead_id)},
+        {"$set": {"score": score, "scored_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"success": True}
+
+@api_router.get("/reports/export")
+async def export_report(
+    report_type: str,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    data = []
+    
+    if report_type == "leads":
+        query = {}
+        if from_date and to_date:
+            query["created_at"] = {"$gte": from_date, "$lte": to_date}
+        
+        leads = await db.leads.find(query).to_list(10000)
+        
+        owner_ids = list(set([lead.get("owner_id") for lead in leads if lead.get("owner_id")]))
+        users_dict = {}
+        if owner_ids:
+            users = await db.users.find({"_id": {"$in": [ObjectId(oid) for oid in owner_ids]}}).to_list(1000)
+            users_dict = {str(u["_id"]): u["name"] for u in users}
+        
+        data = [
+            {
+                "Name": lead["name"],
+                "Surname": lead.get("surname", ""),
+                "Email": lead.get("email", ""),
+                "Phone": lead["phone"],
+                "Source": lead["source"],
+                "Stage": lead["stage"],
+                "Owner": users_dict.get(lead.get("owner_id"), ""),
+                "Created At": lead.get("created_at", ""),
+                "Score": lead.get("score", 0)
+            }
+            for lead in leads
+        ]
+    
+    elif report_type == "deals":
+        query = {}
+        if from_date and to_date:
+            query["deal_date"] = {"$gte": from_date, "$lte": to_date}
+        
+        deals = await db.deals.find(query).to_list(10000)
+        
+        lead_ids = [d["lead_id"] for d in deals]
+        leads_dict = {}
+        if lead_ids:
+            leads = await db.leads.find({"_id": {"$in": [ObjectId(lid) for lid in lead_ids]}}).to_list(10000)
+            leads_dict = {str(l["_id"]): l for l in leads}
+        
+        data = [
+            {
+                "Lead Name": leads_dict.get(deal["lead_id"], {}).get("name", ""),
+                "Deal Date": deal["deal_date"],
+                "Payment Type": deal["payment_type"],
+                "Sales Value": deal.get("sales_value", 0),
+                "Debit Order Value": deal.get("debit_order_value", 0),
+                "Units": deal.get("units", 0),
+                "Joining Fee": deal.get("joining_fee", 0),
+                "Term": deal.get("term", 0),
+                "Stage": leads_dict.get(deal["lead_id"], {}).get("stage", "")
+            }
+            for deal in deals
+        ]
+    
+    elif report_type == "appointments":
+        query = {}
+        if from_date and to_date:
+            query["scheduled_at"] = {"$gte": from_date, "$lte": to_date}
+        
+        appointments = await db.appointments.find(query).to_list(10000)
+        
+        lead_ids = [apt["lead_id"] for apt in appointments]
+        leads_dict = {}
+        if lead_ids:
+            leads = await db.leads.find({"_id": {"$in": [ObjectId(lid) for lid in lead_ids]}}).to_list(10000)
+            leads_dict = {str(l["_id"]): l for l in leads}
+        
+        data = [
+            {
+                "Lead Name": leads_dict.get(apt["lead_id"], {}).get("name", ""),
+                "Scheduled At": apt["scheduled_at"],
+                "Notes": apt.get("notes", ""),
+                "Created At": apt["created_at"]
+            }
+            for apt in appointments
+        ]
+    
+    return {"data": data, "count": len(data)}
+
+@api_router.get("/analytics/consultant-performance")
+async def get_consultant_performance(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    consultants = await db.users.find({"role": UserRole.CONSULTANT}).to_list(1000)
+    
+    performance = []
+    for consultant in consultants:
+        consultant_id = str(consultant["_id"])
+        
+        total_leads = await db.leads.count_documents({"owner_id": consultant_id})
+        closed_won = await db.leads.count_documents({"owner_id": consultant_id, "stage": LeadStage.CLOSED_WON})
+        
+        deals = await db.deals.find({"closed_by": consultant_id}).to_list(1000)
+        
+        invalid_leads = await db.leads.find({"owner_id": consultant_id, "stage": LeadStage.INVALID}).to_list(1000)
+        invalid_lead_ids = [str(lead["_id"]) for lead in invalid_leads]
+        
+        total_sales = sum(
+            d.get("sales_value", 0) or 0 
+            for d in deals 
+            if d["payment_type"] == "Cash" and d["lead_id"] not in invalid_lead_ids
+        )
+        total_debit = sum(
+            d.get("debit_order_value", 0) or 0 
+            for d in deals 
+            if d["payment_type"] == "Debit Order" and d["lead_id"] not in invalid_lead_ids
+        )
+        
+        avg_response_time = 0
+        activities = await db.activities.find({"user_id": consultant_id}).limit(100).to_list(100)
+        if activities:
+            response_times = []
+            for activity in activities:
+                lead = await db.leads.find_one({"_id": ObjectId(activity["lead_id"])})
+                if lead:
+                    created = datetime.fromisoformat(lead["created_at"].replace('Z', '+00:00'))
+                    contacted = datetime.fromisoformat(activity["created_at"].replace('Z', '+00:00'))
+                    diff = (contacted - created).total_seconds() / 3600
+                    if diff > 0 and diff < 168:
+                        response_times.append(diff)
+            
+            if response_times:
+                avg_response_time = sum(response_times) / len(response_times)
+        
+        performance.append({
+            "consultant_id": consultant_id,
+            "consultant_name": consultant["name"],
+            "total_leads": total_leads,
+            "closed_won": closed_won,
+            "conversion_rate": round((closed_won / total_leads * 100) if total_leads > 0 else 0, 2),
+            "total_cash_sales": round(total_sales, 2),
+            "total_debit_sales": round(total_debit, 2),
+            "avg_response_time_hours": round(avg_response_time, 2)
+        })
+    
+    return performance
 
 app.include_router(api_router)
 

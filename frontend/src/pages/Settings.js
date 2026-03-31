@@ -26,10 +26,18 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 const Settings = ({ user }) => {
   const [settings, setSettings] = useState(null);
   const [users, setUsers] = useState([]);
+  const [messageTemplates, setMessageTemplates] = useState([]);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [showAddTemplateModal, setShowAddTemplateModal] = useState(false);
+  const [showEditTemplateModal, setShowEditTemplateModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [whatsappConnected, setWhatsappConnected] = useState(false);
+  const [newTemplate, setNewTemplate] = useState({
+    name: '',
+    content: ''
+  });
   const [newUser, setNewUser] = useState({
     name: '',
     email: '',
@@ -44,6 +52,7 @@ const Settings = ({ user }) => {
       fetchSettings();
       fetchUsers();
     }
+    fetchMessageTemplates();
   }, [user]);
 
   const fetchSettings = async () => {
@@ -67,6 +76,18 @@ const Settings = ({ user }) => {
       setUsers(response.data);
     } catch (error) {
       console.error('Failed to fetch users');
+    }
+  };
+
+  const fetchMessageTemplates = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/message-templates`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMessageTemplates(response.data);
+    } catch (error) {
+      console.error('Failed to fetch message templates');
     }
   };
 
@@ -140,6 +161,57 @@ const Settings = ({ user }) => {
     }
   };
 
+  const handleAddTemplate = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/api/message-templates`, newTemplate, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Message template created');
+      setShowAddTemplateModal(false);
+      setNewTemplate({ name: '', content: '' });
+      fetchMessageTemplates();
+    } catch (error) {
+      toast.error('Failed to create template');
+    }
+  };
+
+  const handleUpdateTemplate = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(
+        `${API_URL}/api/message-templates/${selectedTemplate.id}`,
+        {
+          name: selectedTemplate.name,
+          content: selectedTemplate.content
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('Template updated');
+      setShowEditTemplateModal(false);
+      fetchMessageTemplates();
+    } catch (error) {
+      toast.error('Failed to update template');
+    }
+  };
+
+  const handleDeleteTemplate = async (templateId) => {
+    if (!window.confirm('Are you sure you want to delete this template?')) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API_URL}/api/message-templates/${templateId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Template deleted');
+      fetchMessageTemplates();
+    } catch (error) {
+      toast.error('Failed to delete template');
+    }
+  };
+
   if (user?.role !== 'admin') {
     return (
       <Layout user={user}>
@@ -173,6 +245,10 @@ const Settings = ({ user }) => {
             <TabsTrigger value="users" data-testid="users-tab">
               <UsersIcon size={20} className="mr-2" />
               User Management
+            </TabsTrigger>
+            <TabsTrigger value="messages" data-testid="messages-tab">
+              <FileText size={20} className="mr-2" />
+              Message Templates
             </TabsTrigger>
             <TabsTrigger value="automation" data-testid="automation-tab">
               <GearSix size={20} className="mr-2" />
@@ -320,6 +396,65 @@ const Settings = ({ user }) => {
                     </div>
                   </div>
                 ))}
+              </div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="messages" className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-2xl font-bold text-zinc-100">Message Templates</h3>
+              <Button
+                onClick={() => setShowAddTemplateModal(true)}
+                data-testid="add-template-button"
+                className="bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500 flex items-center gap-2"
+              >
+                <UserPlus size={20} weight="bold" />
+                Add Template
+              </Button>
+            </div>
+
+            <Card className="stat-card p-6" data-testid="templates-list-card">
+              <p className="text-sm text-zinc-400 mb-4">
+                Create message templates with variables: {'{client_name}'}, {'{consultant_name}'}, {'{assistant_name}'}, {'{phone}'}, {'{appointment_date}'}, {'{appointment_time}'}, {'{address}'}
+              </p>
+              <div className="space-y-4">
+                {messageTemplates.map(template => (
+                  <div
+                    key={template.id}
+                    className="flex items-start justify-between p-4 bg-zinc-950 rounded-md border border-zinc-800"
+                    data-testid={`template-item-${template.id}`}
+                  >
+                    <div className="flex-1">
+                      <p className="font-semibold text-zinc-100">{template.name}</p>
+                      <p className="text-sm text-zinc-400 mt-1 line-clamp-2">{template.content}</p>
+                      {template.user_name && (
+                        <p className="text-xs text-zinc-500 mt-2">Created by: {template.user_name}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => {
+                          setSelectedTemplate(template);
+                          setShowEditTemplateModal(true);
+                        }}
+                        data-testid={`edit-template-${template.id}`}
+                        className="p-2 bg-zinc-800 hover:bg-zinc-700"
+                      >
+                        <PencilSimple size={18} />
+                      </Button>
+                      <Button
+                        onClick={() => handleDeleteTemplate(template.id)}
+                        data-testid={`delete-template-${template.id}`}
+                        className="p-2 bg-red-900 hover:bg-red-800 text-red-100"
+                      >
+                        <Trash size={18} />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                {messageTemplates.length === 0 && (
+                  <p className="text-center text-zinc-500 py-8">No message templates yet. Create your first one!</p>
+                )}
               </div>
             </Card>
           </TabsContent>
@@ -592,6 +727,110 @@ const Settings = ({ user }) => {
                   className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
                 >
                   Update User
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddTemplateModal} onOpenChange={setShowAddTemplateModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="add-template-modal">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-zinc-50">Add Message Template</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAddTemplate} className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Template Name</Label>
+              <Input
+                value={newTemplate.name}
+                onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+                required
+                data-testid="new-template-name-input"
+                className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                placeholder="e.g., Welcome Message"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Message Content</Label>
+              <textarea
+                value={newTemplate.content}
+                onChange={(e) => setNewTemplate({ ...newTemplate, content: e.target.value })}
+                required
+                data-testid="new-template-content-input"
+                className="w-full min-h-[120px] bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-50"
+                placeholder="Hi {client_name}, I'm {consultant_name}..."
+              />
+              <p className="text-xs text-zinc-500">
+                Variables: {'{client_name}'}, {'{consultant_name}'}, {'{assistant_name}'}, {'{phone}'}, {'{appointment_date}'}, {'{appointment_time}'}, {'{address}'}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                onClick={() => setShowAddTemplateModal(false)}
+                data-testid="cancel-add-template-button"
+                className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                data-testid="submit-add-template-button"
+                className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+              >
+                Create Template
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditTemplateModal} onOpenChange={setShowEditTemplateModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="edit-template-modal">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-zinc-50">Edit Message Template</DialogTitle>
+          </DialogHeader>
+          {selectedTemplate && (
+            <form onSubmit={handleUpdateTemplate} className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Template Name</Label>
+                <Input
+                  value={selectedTemplate.name}
+                  onChange={(e) => setSelectedTemplate({ ...selectedTemplate, name: e.target.value })}
+                  required
+                  data-testid="edit-template-name-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Message Content</Label>
+                <textarea
+                  value={selectedTemplate.content}
+                  onChange={(e) => setSelectedTemplate({ ...selectedTemplate, content: e.target.value })}
+                  required
+                  data-testid="edit-template-content-input"
+                  className="w-full min-h-[120px] bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-50"
+                />
+                <p className="text-xs text-zinc-500">
+                  Variables: {'{client_name}'}, {'{consultant_name}'}, {'{assistant_name}'}, {'{phone}'}, {'{appointment_date}'}, {'{appointment_time}'}, {'{address}'}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  onClick={() => setShowEditTemplateModal(false)}
+                  data-testid="cancel-edit-template-button"
+                  className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  data-testid="submit-edit-template-button"
+                  className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+                >
+                  Update Template
                 </Button>
               </div>
             </form>

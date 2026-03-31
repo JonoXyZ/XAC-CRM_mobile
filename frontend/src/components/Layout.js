@@ -5,6 +5,8 @@ import {
   House, 
   Users, 
   Calendar,
+  ChartBar,
+  FileText,
   GearSix, 
   SignOut,
   Barbell
@@ -25,6 +27,13 @@ const Layout = ({ children, user }) => {
     { path: '/leads', icon: Users, label: 'Leads', testId: 'nav-leads' },
     { path: '/appointments', icon: Calendar, label: 'Appointments', testId: 'nav-appointments' },
   ];
+
+  if (user?.role === 'admin' || user?.role === 'sales_manager') {
+    menuItems.push(
+      { path: '/reports', icon: FileText, label: 'Reports', testId: 'nav-reports' },
+      { path: '/analytics', icon: ChartBar, label: 'Analytics', testId: 'nav-analytics' }
+    );
+  }
 
   if (user?.role === 'admin') {
     menuItems.push({ path: '/settings', icon: GearSix, label: 'Settings', testId: 'nav-settings' });
