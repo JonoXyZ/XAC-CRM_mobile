@@ -7,6 +7,7 @@ import {
   Calendar,
   ChartBar,
   FileText,
+  Robot,
   GearSix, 
   SignOut,
   Barbell
@@ -33,6 +34,16 @@ const Layout = ({ children, user }) => {
       { path: '/reports', icon: FileText, label: 'Reports', testId: 'nav-reports' },
       { path: '/analytics', icon: ChartBar, label: 'Analytics', testId: 'nav-analytics' }
     );
+  }
+
+  if (user?.role === 'admin') {
+    menuItems.push({ 
+      path: '/emergent-fixes', 
+      icon: Robot, 
+      label: 'Emergent Fixes', 
+      testId: 'nav-emergent-fixes',
+      highlight: true 
+    });
   }
 
   // All users can access settings (for message templates)
@@ -65,14 +76,19 @@ const Layout = ({ children, user }) => {
                   <button
                     onClick={() => navigate(item.path)}
                     data-testid={item.testId}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-md font-semibold text-sm ${
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-md font-semibold text-sm relative ${
                       isActive
-                        ? 'bg-lime-400 text-zinc-950'
+                        ? item.highlight
+                          ? 'bg-gradient-to-r from-lime-400 to-cyan-500 text-zinc-950'
+                          : 'bg-lime-400 text-zinc-950'
                         : 'text-zinc-300 hover:text-white hover:bg-zinc-800/50'
                     }`}
                   >
                     <Icon size={20} weight={isActive ? 'fill' : 'regular'} />
                     {item.label}
+                    {item.highlight && !isActive && (
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
+                    )}
                   </button>
                 </li>
               );

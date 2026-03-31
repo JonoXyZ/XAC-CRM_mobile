@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
+import AIWritingAssistant from '../components/AIWritingAssistant';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -31,6 +32,7 @@ const Settings = ({ user }) => {
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [showAddTemplateModal, setShowAddTemplateModal] = useState(false);
   const [showEditTemplateModal, setShowEditTemplateModal] = useState(false);
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [whatsappConnected, setWhatsappConnected] = useState(false);
@@ -462,14 +464,24 @@ const Settings = ({ user }) => {
 
             <div className="flex justify-between items-center">
               <h3 className="text-2xl font-bold text-zinc-100">Message Templates</h3>
-              <Button
-                onClick={() => setShowAddTemplateModal(true)}
-                data-testid="add-template-button"
-                className="bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500 flex items-center gap-2"
-              >
-                <UserPlus size={20} weight="bold" />
-                Add Template
-              </Button>
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => setShowAIAssistant(true)}
+                  data-testid="ai-assistant-button"
+                  className="bg-gradient-to-r from-lime-400 to-cyan-500 text-zinc-950 font-bold hover:opacity-90 flex items-center gap-2"
+                >
+                  <FileText size={20} weight="bold" />
+                  AI Writing Assistant
+                </Button>
+                <Button
+                  onClick={() => setShowAddTemplateModal(true)}
+                  data-testid="add-template-button"
+                  className="bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500 flex items-center gap-2"
+                >
+                  <UserPlus size={20} weight="bold" />
+                  Add Template
+                </Button>
+              </div>
             </div>
 
             <Card className="stat-card p-6" data-testid="templates-list-card">
@@ -900,6 +912,15 @@ const Settings = ({ user }) => {
           )}
         </DialogContent>
       </Dialog>
+
+      <AIWritingAssistant
+        open={showAIAssistant}
+        onOpenChange={setShowAIAssistant}
+        onSelectMessage={(message) => {
+          setNewTemplate({ ...newTemplate, content: message });
+          setShowAddTemplateModal(true);
+        }}
+      />
     </Layout>
   );
 };

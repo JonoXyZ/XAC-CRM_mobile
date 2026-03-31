@@ -6,7 +6,9 @@ import Leads from './pages/Leads';
 import Appointments from './pages/Appointments';
 import Reports from './pages/Reports';
 import Analytics from './pages/Analytics';
+import EmergentFixes from './pages/EmergentFixes';
 import Settings from './pages/Settings';
+import FloatingChatButton from './components/FloatingChatButton';
 import { Toaster } from './components/ui/sonner';
 import './App.css';
 
@@ -29,6 +31,7 @@ function App() {
   return (
     <Router>
       <Toaster position="top-right" richColors />
+      <FloatingChatButton user={user} type="emergent" />
       <Routes>
         <Route path="/" element={<Login setUser={setUser} />} />
         <Route
@@ -68,6 +71,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Analytics user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/emergent-fixes"
+          element={
+            <ProtectedRoute>
+              <EmergentFixes user={user} />
             </ProtectedRoute>
           }
         />
