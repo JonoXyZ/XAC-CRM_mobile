@@ -2,19 +2,28 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { Card } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { TrendUp, Users, Target, Clock } from '@phosphor-icons/react';
+import { TrendUp, Users, Target, Clock, Calendar, FileText } from '@phosphor-icons/react';
+import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Dashboard = ({ user }) => {
   const [stats, setStats] = useState(null);
   const [appointments, setAppointments] = useState([]);
+  const [settings, setSettings] = useState(null);
+  const [showPeriodModal, setShowPeriodModal] = useState(false);
+  const [monthPeriod, setMonthPeriod] = useState({ month_start_date: '', month_end_date: '' });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchStats();
     fetchTodayAppointments();
+    fetchSettings();
   }, []);
 
   const fetchStats = async () => {
@@ -44,6 +53,54 @@ const Dashboard = ({ user }) => {
     }
   };
 
+  const fetchSettings = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/settings`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSettings(response.data);
+      if (response.data.month_start_date && response.data.month_end_date) {
+        setMonthPeriod({
+          month_start_date: response.data.month_start_date,
+          month_end_date: response.data.month_end_date
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch settings:', error);
+    }
+  };
+
+  const handleUpdatePeriod = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`${API_URL}/api/settings`, monthPeriod, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Month period updated');
+      setShowPeriodModal(false);
+      fetchSettings();
+    } catch (error) {
+      toast.error('Failed to update period');
+    }
+  };
+
+  const handleGenerateReport = async () => {
+    if (!window.confirm('This will generate a month report and clear all Closed Won deals. Continue?')) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post(`${API_URL}/api/reports/generate-month-report`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success(response.data.message);
+      fetchStats();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to generate report');
+    }
+  };
+
   const chartData = [
     { month: 'Jan', sales: 4000 },
     { month: 'Feb', sales: 3000 },
@@ -56,11 +113,58 @@ const Dashboard = ({ user }) => {
   return (
     <Layout user={user}>
       <div className="p-4 sm:p-6 lg:p-8 space-y-6" data-testid="dashboard-page">
-        <div>
-          <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-zinc-50" data-testid="dashboard-title">
-            Dashboard
-          </h1>
-          <p className="mt-2 text-base text-zinc-400">Welcome back, {user?.name}</p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-zinc-50" data-testid="dashboard-title">
+              Dashboard
+            </h1>
+            <p className="mt-2 text-base text-zinc-400">Welcome back, {user?.name}</p>
+          </div>
+
+          <div className="text-right">
+            {settings?.month_start_date && settings?.month_end_date ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 justify-end">
+                  <Calendar size={16} className="text-lime-400" />
+                  <span className="text-xs tracking-wider uppercase font-bold text-zinc-500">Active Month</span>
+                </div>
+                <p className="text-sm font-semibold text-zinc-100">
+                  {new Date(settings.month_start_date).toLocaleDateString()} - {new Date(settings.month_end_date).toLocaleDateString()}
+                </p>
+                <p className="text-xs text-zinc-500">Cutoff: {new Date(settings.month_end_date).toLocaleDateString()}</p>
+                {user?.role === 'admin' && (
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      onClick={() => setShowPeriodModal(true)}
+                      data-testid="edit-period-button"
+                      className="text-xs bg-zinc-800 text-zinc-50 hover:bg-zinc-700 px-3 py-1"
+                    >
+                      Edit Period
+                    </Button>
+                    <Button
+                      onClick={handleGenerateReport}
+                      data-testid="generate-report-button"
+                      className="text-xs bg-amber-500 text-zinc-950 hover:bg-amber-600 px-3 py-1 font-semibold"
+                    >
+                      <FileText size={14} className="mr-1" />
+                      Generate Report
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              user?.role === 'admin' && (
+                <Button
+                  onClick={() => setShowPeriodModal(true)}
+                  data-testid="set-period-button"
+                  className="bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+                >
+                  <Calendar size={18} className="mr-2" />
+                  Set Month Period
+                </Button>
+              )
+            )}
+          </div>
         </div>
 
         {loading ? (
@@ -204,6 +308,60 @@ const Dashboard = ({ user }) => {
           </>
         )}
       </div>
+
+      <Dialog open={showPeriodModal} onOpenChange={setShowPeriodModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="month-period-modal">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-zinc-50">Set Month Period</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUpdatePeriod} className="space-y-4">
+            <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+              <p className="text-sm text-zinc-300">
+                Set the billing period for your gym. Deals will be tracked from start to end date. After cutoff, you can generate a report and clear the Kanban board.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Month Start Date</Label>
+              <Input
+                type="date"
+                value={monthPeriod.month_start_date}
+                onChange={(e) => setMonthPeriod({ ...monthPeriod, month_start_date: e.target.value })}
+                required
+                data-testid="month-start-input"
+                className="bg-zinc-950 border-zinc-800 text-zinc-50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Month End Date (Cutoff)</Label>
+              <Input
+                type="date"
+                value={monthPeriod.month_end_date}
+                onChange={(e) => setMonthPeriod({ ...monthPeriod, month_end_date: e.target.value })}
+                required
+                data-testid="month-end-input"
+                className="bg-zinc-950 border-zinc-800 text-zinc-50"
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                onClick={() => setShowPeriodModal(false)}
+                data-testid="cancel-period-button"
+                className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                data-testid="submit-period-button"
+                className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+              >
+                Set Period
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };

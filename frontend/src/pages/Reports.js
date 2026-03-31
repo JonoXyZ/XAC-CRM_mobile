@@ -17,6 +17,26 @@ const Reports = ({ user }) => {
   const [toDate, setToDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
+  const [monthReports, setMonthReports] = useState([]);
+  const [loadingMonthReports, setLoadingMonthReports] = useState(true);
+
+  useEffect(() => {
+    fetchMonthReports();
+  }, []);
+
+  const fetchMonthReports = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/reports/month-reports`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMonthReports(response.data);
+    } catch (error) {
+      console.error('Failed to fetch month reports');
+    } finally {
+      setLoadingMonthReports(false);
+    }
+  };
 
   const handleExport = async () => {
     if (!fromDate || !toDate) {
@@ -152,6 +172,51 @@ const Reports = ({ user }) => {
               </div>
             )}
           </div>
+        </Card>
+
+        <Card className="stat-card p-6" data-testid="month-reports-card">
+          <h3 className="text-2xl font-semibold text-zinc-100 mb-4">Monthly Reports Archive</h3>
+          
+          {loadingMonthReports ? (
+            <p className="text-center text-zinc-400 py-8">Loading reports...</p>
+          ) : monthReports.length > 0 ? (
+            <div className="space-y-3">
+              {monthReports.map((report) => (
+                <div
+                  key={report.id}
+                  className="p-4 bg-zinc-950 rounded-md border border-zinc-800 hover:border-zinc-700"
+                  data-testid={`month-report-${report.id}`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-semibold text-zinc-100">
+                        {new Date(report.period_start).toLocaleDateString()} - {new Date(report.period_end).toLocaleDateString()}
+                      </p>
+                      <div className="grid grid-cols-3 gap-4 mt-2 text-sm">
+                        <div>
+                          <span className="text-zinc-500">Deals:</span>
+                          <span className="ml-2 font-semibold text-zinc-100">{report.total_deals}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-500">Cash:</span>
+                          <span className="ml-2 font-semibold text-emerald-400">R{report.total_cash_sales}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-500">Debit:</span>
+                          <span className="ml-2 font-semibold text-cyan-400">R{report.total_debit_sales}</span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-zinc-500 mt-2">
+                        Generated: {new Date(report.generated_at).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-zinc-500 py-8">No monthly reports generated yet</p>
+          )}
         </Card>
       </div>
     </Layout>

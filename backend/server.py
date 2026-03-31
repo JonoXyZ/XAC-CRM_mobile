@@ -140,6 +140,8 @@ class SettingsUpdate(BaseModel):
     auto_reassign_hours: Optional[int] = None
     whatsapp_template: Optional[str] = None
     logo_url: Optional[str] = None
+    month_start_date: Optional[str] = None
+    month_end_date: Optional[str] = None
 
 class WhatsAppMessageRequest(BaseModel):
     phone_number: str
@@ -621,7 +623,8 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
 @api_router.get("/settings")
 async def get_settings(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Only admins can access settings")
+        settings = await db.settings.find_one({"key": "system_settings"}, {"month_start_date": 1, "month_end_date": 1, "_id": 0})
+        return settings if settings else {"month_start_date": None, "month_end_date": None}
     
     settings = await db.settings.find_one({"key": "system_settings"})
     
@@ -631,7 +634,9 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
             "auto_followup_hours": 12,
             "auto_reassign_hours": 72,
             "whatsapp_template": "Hi {name}, thank you for your interest in Revival Fitness! I'm {consultant} and I'll be helping you today. When would be a good time for you to visit our gym?",
-            "logo_url": "https://images.pexels.com/photos/7151700/pexels-photo-7151700.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+            "logo_url": "https://images.pexels.com/photos/7151700/pexels-photo-7151700.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+            "month_start_date": None,
+            "month_end_date": None
         }
         await db.settings.insert_one(default_settings)
         return default_settings
@@ -1006,6 +1011,120 @@ async def get_consultant_performance(current_user: dict = Depends(get_current_us
         })
     
     return performance
+
+@api_router.post("/reports/generate-month-report")
+async def generate_month_report(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can generate month reports")
+    
+    settings = await db.settings.find_one({"key": "system_settings"})
+    if not settings or not settings.get("month_start_date") or not settings.get("month_end_date"):
+        raise HTTPException(status_code=400, detail="Month period not configured")
+    
+    month_start = settings["month_start_date"]
+    month_end = settings["month_end_date"]
+    
+    closed_won_leads = await db.leads.find({"stage": LeadStage.CLOSED_WON}).to_list(10000)
+    
+    if not closed_won_leads:
+        return {"message": "No closed deals to process", "deals_count": 0}
+    
+    lead_ids = [str(lead["_id"]) for lead in closed_won_leads]
+    deals = await db.deals.find({"lead_id": {"$in": lead_ids}}).to_list(10000)
+    
+    owner_ids = list(set([lead.get("owner_id") for lead in closed_won_leads if lead.get("owner_id")]))
+    users_dict = {}
+    if owner_ids:
+        users = await db.users.find({"_id": {"$in": [ObjectId(oid) for oid in owner_ids]}}).to_list(1000)
+        users_dict = {str(u["_id"]): u["name"] for u in users}
+    
+    report_data = []
+    for lead in closed_won_leads:
+        lead_deals = [d for d in deals if d["lead_id"] == str(lead["_id"])]
+        for deal in lead_deals:
+            report_data.append({
+                "lead_id": str(lead["_id"]),
+                "lead_name": lead["name"],
+                "lead_surname": lead.get("surname"),
+                "owner_name": users_dict.get(lead.get("owner_id")),
+                "deal_date": deal["deal_date"],
+                "payment_type": deal["payment_type"],
+                "sales_value": deal.get("sales_value"),
+                "debit_order_value": deal.get("debit_order_value"),
+                "units": deal.get("units"),
+                "joining_fee": deal.get("joining_fee"),
+                "closed_by": deal["closed_by"],
+                "to_by": deal["to_by"]
+            })
+    
+    report_doc = {
+        "period_start": month_start,
+        "period_end": month_end,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_by": str(current_user["_id"]),
+        "deals": report_data,
+        "total_deals": len(report_data),
+        "total_cash_sales": sum(d.get("sales_value", 0) or 0 for d in deals if d["payment_type"] == "Cash"),
+        "total_debit_sales": sum(d.get("debit_order_value", 0) or 0 for d in deals if d["payment_type"] == "Debit Order"),
+        "total_units": sum(d.get("units", 0) or 0 for d in deals)
+    }
+    
+    await db.month_reports.insert_one(report_doc)
+    
+    await db.leads.update_many(
+        {"stage": LeadStage.CLOSED_WON},
+        {"$set": {"stage": "Archived"}}
+    )
+    
+    return {
+        "success": True,
+        "message": "Month report generated and deals cleared",
+        "deals_count": len(report_data),
+        "period": f"{month_start} to {month_end}"
+    }
+
+@api_router.get("/reports/month-reports")
+async def get_month_reports(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    reports = await db.month_reports.find({}).sort("generated_at", -1).to_list(1000)
+    
+    return [
+        {
+            "id": str(report["_id"]),
+            "period_start": report["period_start"],
+            "period_end": report["period_end"],
+            "generated_at": report["generated_at"],
+            "total_deals": report["total_deals"],
+            "total_cash_sales": report["total_cash_sales"],
+            "total_debit_sales": report["total_debit_sales"],
+            "total_units": report["total_units"]
+        }
+        for report in reports
+    ]
+
+@api_router.get("/reports/month-reports/{report_id}")
+async def get_month_report_details(report_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    report = await db.month_reports.find_one({"_id": ObjectId(report_id)})
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    return {
+        "id": str(report["_id"]),
+        "period_start": report["period_start"],
+        "period_end": report["period_end"],
+        "generated_at": report["generated_at"],
+        "deals": report["deals"],
+        "total_deals": report["total_deals"],
+        "total_cash_sales": report["total_cash_sales"],
+        "total_debit_sales": report["total_debit_sales"],
+        "total_units": report["total_units"]
+    }
 
 app.include_router(api_router)
 
