@@ -1,0 +1,452 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import Layout from '../components/Layout';
+import { Card } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Switch } from '../components/ui/switch';
+import { toast } from 'sonner';
+import { 
+  GearSix, 
+  Users as UsersIcon, 
+  WhatsappLogo, 
+  Image, 
+  FileText,
+  UserPlus,
+  Trash
+} from '@phosphor-icons/react';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL;
+
+const Settings = ({ user }) => {
+  const [settings, setSettings] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [whatsappConnected, setWhatsappConnected] = useState(false);
+  const [newUser, setNewUser] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'consultant',
+    phone: '',
+    active: true
+  });
+
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      fetchSettings();
+      fetchUsers();
+    }
+  }, [user]);
+
+  const fetchSettings = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/settings`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSettings(response.data);
+    } catch (error) {
+      console.error('Failed to fetch settings');
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/users`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setUsers(response.data);
+    } catch (error) {
+      console.error('Failed to fetch users');
+    }
+  };
+
+  const handleUpdateSettings = async (updates) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`${API_URL}/api/settings`, updates, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Settings updated');
+      fetchSettings();
+    } catch (error) {
+      toast.error('Failed to update settings');
+    }
+  };
+
+  const handleAddUser = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/api/auth/register`, newUser, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('User created successfully');
+      setShowAddUserModal(false);
+      setNewUser({ name: '', email: '', password: '', role: 'consultant', phone: '', active: true });
+      fetchUsers();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to create user');
+    }
+  };
+
+  const handleToggleUserStatus = async (userId, currentStatus) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(
+        `${API_URL}/api/users/${userId}`,
+        { active: !currentStatus },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('User status updated');
+      fetchUsers();
+    } catch (error) {
+      toast.error('Failed to update user');
+    }
+  };
+
+  if (user?.role !== 'admin') {
+    return (
+      <Layout user={user}>
+        <div className="p-4 sm:p-6 lg:p-8">
+          <div className="text-center py-12">
+            <GearSix size={64} className="mx-auto text-zinc-700 mb-4" />
+            <h2 className="text-2xl font-bold text-zinc-400">Access Denied</h2>
+            <p className="text-zinc-500 mt-2">Only administrators can access settings</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout user={user}>
+      <div className="p-4 sm:p-6 lg:p-8" data-testid="settings-page">
+        <div className="mb-6">
+          <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-zinc-50" data-testid="settings-title">
+            Admin Settings
+          </h1>
+          <p className="mt-2 text-base text-zinc-400">Manage system configuration and integrations</p>
+        </div>
+
+        <Tabs defaultValue="integrations" className="space-y-6">
+          <TabsList className="bg-zinc-900 border border-zinc-800">
+            <TabsTrigger value="integrations" data-testid="integrations-tab">
+              <WhatsappLogo size={20} className="mr-2" />
+              Integrations
+            </TabsTrigger>
+            <TabsTrigger value="users" data-testid="users-tab">
+              <UsersIcon size={20} className="mr-2" />
+              User Management
+            </TabsTrigger>
+            <TabsTrigger value="automation" data-testid="automation-tab">
+              <GearSix size={20} className="mr-2" />
+              Automation
+            </TabsTrigger>
+            <TabsTrigger value="branding" data-testid="branding-tab">
+              <Image size={20} className="mr-2" />
+              Branding
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="integrations" className="space-y-6">
+            <Card className="stat-card p-6" data-testid="whatsapp-integration-card">
+              <div className="flex items-start gap-4">
+                <WhatsappLogo size={48} weight="duotone" className="text-lime-400" />
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-zinc-100">WhatsApp Web Automation</h3>
+                  <p className="text-sm text-zinc-400 mt-1">
+                    Connect WhatsApp for automated lead follow-ups and messaging
+                  </p>
+                  <div className="mt-4 flex items-center gap-3">
+                    <div className={`w-3 h-3 rounded-full ${whatsappConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                    <span className="text-sm text-zinc-300">
+                      {whatsappConnected ? 'Connected' : 'Not Connected'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-zinc-950 rounded-md border border-zinc-800">
+                <h4 className="text-sm font-bold text-zinc-300 mb-3">Setup Instructions:</h4>
+                <ol className="space-y-2 text-sm text-zinc-400">
+                  <li>1. The WhatsApp service runs on Node.js with Baileys library</li>
+                  <li>2. Start the WhatsApp service: <code className="bg-zinc-900 px-2 py-1 rounded">node whatsapp-service.js</code></li>
+                  <li>3. Scan the QR code that appears in your terminal</li>
+                  <li>4. Open WhatsApp on your phone → Settings → Linked Devices → Link a Device</li>
+                  <li>5. Once connected, automated messages will be sent through this session</li>
+                </ol>
+                <div className="mt-4">
+                  <p className="text-xs text-zinc-500">
+                    Note: WhatsApp service must run continuously. Consider using PM2 for production deployment.
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="stat-card p-6" data-testid="meta-integration-card">
+              <div className="flex items-start gap-4">
+                <FileText size={48} weight="duotone" className="text-cyan-500" />
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-zinc-100">Meta Lead Forms</h3>
+                  <p className="text-sm text-zinc-400 mt-1">
+                    Automatically capture leads from Facebook/Instagram ads
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-zinc-950 rounded-md border border-zinc-800">
+                <h4 className="text-sm font-bold text-zinc-300 mb-3">Setup Instructions:</h4>
+                <ol className="space-y-2 text-sm text-zinc-400">
+                  <li>1. Go to Facebook Business Settings → Webhooks</li>
+                  <li>2. Subscribe to leadgen events</li>
+                  <li>3. Add webhook URL: <code className="bg-zinc-900 px-2 py-1 rounded">{API_URL}/api/webhooks/meta</code></li>
+                  <li>4. Set verify token: <code className="bg-zinc-900 px-2 py-1 rounded">xac_crm_meta_verify</code></li>
+                  <li>5. Test the connection from Facebook</li>
+                </ol>
+              </div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="users" className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-2xl font-bold text-zinc-100">Team Members</h3>
+              <Button
+                onClick={() => setShowAddUserModal(true)}
+                data-testid="add-user-button"
+                className="bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500 flex items-center gap-2"
+              >
+                <UserPlus size={20} weight="bold" />
+                Add User
+              </Button>
+            </div>
+
+            <Card className="stat-card p-6" data-testid="users-list-card">
+              <div className="space-y-4">
+                {users.map(u => (
+                  <div
+                    key={u.id}
+                    className="flex items-center justify-between p-4 bg-zinc-950 rounded-md border border-zinc-800"
+                    data-testid={`user-item-${u.id}`}
+                  >
+                    <div>
+                      <p className="font-semibold text-zinc-100">{u.name}</p>
+                      <p className="text-sm text-zinc-400">{u.email}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded-full text-zinc-300">
+                          {u.role.replace('_', ' ')}
+                        </span>
+                        {u.active ? (
+                          <span className="text-xs text-emerald-500">Active</span>
+                        ) : (
+                          <span className="text-xs text-red-500">Inactive</span>
+                        )}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={u.active}
+                      onCheckedChange={() => handleToggleUserStatus(u.id, u.active)}
+                      data-testid={`user-toggle-${u.id}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="automation" className="space-y-6">
+            <Card className="stat-card p-6" data-testid="automation-settings-card">
+              <h3 className="text-2xl font-bold text-zinc-100 mb-4">Automation Rules</h3>
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">
+                    Auto Follow-up After (hours)
+                  </Label>
+                  <Input
+                    type="number"
+                    value={settings?.auto_followup_hours || 12}
+                    onChange={(e) => handleUpdateSettings({ auto_followup_hours: parseInt(e.target.value) })}
+                    data-testid="auto-followup-input"
+                    className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                  />
+                  <p className="text-xs text-zinc-500">
+                    Automatically send follow-up message if no response
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">
+                    Auto Reassign After (hours)
+                  </Label>
+                  <Input
+                    type="number"
+                    value={settings?.auto_reassign_hours || 72}
+                    onChange={(e) => handleUpdateSettings({ auto_reassign_hours: parseInt(e.target.value) })}
+                    data-testid="auto-reassign-input"
+                    className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                  />
+                  <p className="text-xs text-zinc-500">
+                    Reassign lead if no contact made within this period
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">
+                    WhatsApp Message Template
+                  </Label>
+                  <textarea
+                    value={settings?.whatsapp_template || ''}
+                    onChange={(e) => handleUpdateSettings({ whatsapp_template: e.target.value })}
+                    data-testid="whatsapp-template-input"
+                    className="w-full min-h-[120px] bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-50 focus:ring-2 focus:ring-lime-400"
+                    placeholder="Hi {name}, thank you for your interest..."
+                  />
+                  <p className="text-xs text-zinc-500">
+                    Use {'{name}'} for lead name and {'{consultant}'} for consultant name
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="branding" className="space-y-6">
+            <Card className="stat-card p-6" data-testid="branding-settings-card">
+              <h3 className="text-2xl font-bold text-zinc-100 mb-4">Brand Settings</h3>
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">
+                    Logo URL
+                  </Label>
+                  <Input
+                    type="url"
+                    value={settings?.logo_url || ''}
+                    onChange={(e) => handleUpdateSettings({ logo_url: e.target.value })}
+                    data-testid="logo-url-input"
+                    className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                    placeholder="https://example.com/logo.png"
+                  />
+                  <p className="text-xs text-zinc-500">
+                    Enter a URL to update the logo displayed in the sidebar
+                  </p>
+                </div>
+
+                {settings?.logo_url && (
+                  <div className="space-y-2">
+                    <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">
+                      Logo Preview
+                    </Label>
+                    <div className="p-4 bg-zinc-950 rounded-md border border-zinc-800">
+                      <img
+                        src={settings.logo_url}
+                        alt="Logo"
+                        className="h-16 w-auto"
+                        onError={(e) => {
+                          e.target.src = 'https://images.pexels.com/photos/7151700/pexels-photo-7151700.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940';
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      <Dialog open={showAddUserModal} onOpenChange={setShowAddUserModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="add-user-modal">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-zinc-50">Add New User</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAddUser} className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Full Name</Label>
+              <Input
+                value={newUser.name}
+                onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                required
+                data-testid="new-user-name-input"
+                className="bg-zinc-950 border-zinc-800 text-zinc-50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Email</Label>
+              <Input
+                type="email"
+                value={newUser.email}
+                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                required
+                data-testid="new-user-email-input"
+                className="bg-zinc-950 border-zinc-800 text-zinc-50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Password</Label>
+              <Input
+                type="password"
+                value={newUser.password}
+                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                required
+                data-testid="new-user-password-input"
+                className="bg-zinc-950 border-zinc-800 text-zinc-50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Phone</Label>
+              <Input
+                value={newUser.phone}
+                onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+                data-testid="new-user-phone-input"
+                className="bg-zinc-950 border-zinc-800 text-zinc-50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Role</Label>
+              <Select
+                value={newUser.role}
+                onValueChange={(value) => setNewUser({ ...newUser, role: value })}
+                data-testid="new-user-role-select"
+              >
+                <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-zinc-900 border-zinc-800">
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="sales_manager">Sales Manager</SelectItem>
+                  <SelectItem value="club_manager">Club Manager</SelectItem>
+                  <SelectItem value="consultant">Consultant</SelectItem>
+                  <SelectItem value="assistant">Assistant</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                onClick={() => setShowAddUserModal(false)}
+                data-testid="cancel-add-user-button"
+                className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                data-testid="submit-add-user-button"
+                className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+              >
+                Create User
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </Layout>
+  );
+};
+
+export default Settings;

@@ -1,72 +1,784 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from typing import List, Optional, Dict, Any
 import uuid
-from datetime import datetime, timezone
-
+from datetime import datetime, timezone, timedelta
+from passlib.context import CryptContext
+import jwt
+from bson import ObjectId
+import httpx
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer()
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
+JWT_SECRET = os.environ.get('JWT_SECRET', 'xac_crm_secret_key_2026_revival_fitness')
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 24
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class UserRole:
+    ADMIN = "admin"
+    SALES_MANAGER = "sales_manager"
+    CLUB_MANAGER = "club_manager"
+    CONSULTANT = "consultant"
+    ASSISTANT = "assistant"
+
+class LeadStage:
+    NEW_LEAD = "New Lead"
+    CONTACTED = "Contacted"
+    ENGAGED = "Engaged"
+    APPOINTMENT_SET = "Appointment Set"
+    SHOWED_UP = "Showed Up"
+    TRIAL = "Trial / Consultation"
+    CLOSED_WON = "Closed Won"
+    CLOSED_LOST = "Closed Lost"
+    INVALID = "Invalid"
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+    role: Optional[str] = None
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+    role: str
+    phone: Optional[str] = None
+    active: bool = True
+    linked_consultants: List[str] = []
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: str
+    phone: Optional[str] = None
+    active: bool
+    linked_consultants: List[str] = []
+    created_at: str
+
+class LeadCreate(BaseModel):
+    name: str
+    surname: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: str
+    source: str
+    campaign: Optional[str] = None
+    notes: Optional[str] = None
+    tags: List[str] = []
+    form_answers: Optional[Dict[str, Any]] = None
+
+class LeadUpdate(BaseModel):
+    name: Optional[str] = None
+    surname: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    stage: Optional[str] = None
+    owner_id: Optional[str] = None
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = None
+    form_answers: Optional[Dict[str, Any]] = None
+
+class LeadResponse(BaseModel):
+    id: str
+    name: str
+    surname: Optional[str] = None
+    email: Optional[str] = None
+    phone: str
+    source: str
+    campaign: Optional[str] = None
+    stage: str
+    owner_id: Optional[str] = None
+    owner_name: Optional[str] = None
+    tags: List[str] = []
+    notes: Optional[str] = None
+    form_answers: Optional[Dict[str, Any]] = None
+    created_at: str
+    updated_at: str
+    last_contact: Optional[str] = None
+
+class ActivityCreate(BaseModel):
+    lead_id: str
+    activity_type: str
+    content: str
+    notes: Optional[str] = None
+
+class DealCreate(BaseModel):
+    lead_id: str
+    deal_date: str
+    closed_by: str
+    to_by: str
+    payment_type: str
+    sales_value: Optional[float] = None
+    term: Optional[int] = None
+    units: Optional[int] = None
+    joining_fee: Optional[float] = None
+    debit_order_value: Optional[float] = None
+
+class SettingsUpdate(BaseModel):
+    auto_followup_hours: Optional[int] = None
+    auto_reassign_hours: Optional[int] = None
+    whatsapp_template: Optional[str] = None
+    logo_url: Optional[str] = None
+
+class WhatsAppMessageRequest(BaseModel):
+    phone_number: str
+    message: str
+    lead_id: Optional[str] = None
+
+class AppointmentCreate(BaseModel):
+    lead_id: str
+    scheduled_at: str
+    notes: Optional[str] = None
+    booked_by: Optional[str] = None
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return encoded_jwt
+
+def verify_token(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    payload = verify_token(token)
+    user_id = payload.get("user_id")
     
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-class StatusCheckCreate(BaseModel):
-    client_name: str
-
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
-
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
     
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
     
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
+    return user
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
+async def get_next_consultant_for_assignment():
+    consultants = await db.users.find({
+        "role": UserRole.CONSULTANT,
+        "active": True
+    }).to_list(100)
     
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
+    if not consultants:
+        return None
     
-    return status_checks
+    lead_counts = []
+    for consultant in consultants:
+        count = await db.leads.count_documents({
+            "owner_id": str(consultant["_id"]),
+            "stage": {"$nin": [LeadStage.CLOSED_WON, LeadStage.CLOSED_LOST]}
+        })
+        lead_counts.append({"consultant": consultant, "count": count})
+    
+    lead_counts.sort(key=lambda x: x["count"])
+    return lead_counts[0]["consultant"] if lead_counts else None
 
-# Include the router in the main app
+@api_router.post("/auth/login")
+async def login(login_data: LoginRequest):
+    user = await db.users.find_one({"email": login_data.email})
+    
+    if not user or not pwd_context.verify(login_data.password, user["password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    if not user.get("active", True):
+        raise HTTPException(status_code=403, detail="Account is inactive")
+    
+    token = create_access_token({
+        "user_id": str(user["_id"]),
+        "email": user["email"],
+        "role": user["role"]
+    })
+    
+    return {
+        "token": token,
+        "user": {
+            "id": str(user["_id"]),
+            "email": user["email"],
+            "name": user["name"],
+            "role": user["role"]
+        }
+    }
+
+@api_router.post("/auth/register", response_model=UserResponse)
+async def register(user_data: UserCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can create users")
+    
+    existing = await db.users.find_one({"email": user_data.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = pwd_context.hash(user_data.password)
+    
+    user_doc = {
+        "email": user_data.email,
+        "password": hashed_password,
+        "name": user_data.name,
+        "role": user_data.role,
+        "phone": user_data.phone,
+        "active": user_data.active,
+        "linked_consultants": user_data.linked_consultants,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    result = await db.users.insert_one(user_doc)
+    user_doc["id"] = str(result.inserted_id)
+    
+    return UserResponse(**user_doc)
+
+@api_router.get("/users", response_model=List[UserResponse])
+async def get_users(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    users = await db.users.find({}, {"password": 0}).to_list(1000)
+    
+    return [
+        UserResponse(
+            id=str(user["_id"]),
+            email=user["email"],
+            name=user["name"],
+            role=user["role"],
+            phone=user.get("phone"),
+            active=user.get("active", True),
+            linked_consultants=user.get("linked_consultants", []),
+            created_at=user.get("created_at", "")
+        )
+        for user in users
+    ]
+
+@api_router.put("/users/{user_id}")
+async def update_user(user_id: str, updates: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can update users")
+    
+    if "password" in updates:
+        updates["password"] = pwd_context.hash(updates["password"])
+    
+    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": updates})
+    return {"success": True}
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can delete users")
+    
+    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"active": False}})
+    return {"success": True}
+
+@api_router.post("/leads", response_model=LeadResponse)
+async def create_lead(lead_data: LeadCreate, current_user: dict = Depends(get_current_user)):
+    consultant = await get_next_consultant_for_assignment()
+    
+    lead_doc = {
+        "name": lead_data.name,
+        "surname": lead_data.surname,
+        "email": lead_data.email,
+        "phone": lead_data.phone,
+        "source": lead_data.source,
+        "campaign": lead_data.campaign,
+        "stage": LeadStage.NEW_LEAD,
+        "owner_id": str(consultant["_id"]) if consultant else None,
+        "tags": lead_data.tags,
+        "notes": lead_data.notes,
+        "form_answers": lead_data.form_answers,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "last_contact": None
+    }
+    
+    result = await db.leads.insert_one(lead_doc)
+    lead_doc["id"] = str(result.inserted_id)
+    
+    await db.audit_logs.insert_one({
+        "action": "lead_created",
+        "lead_id": lead_doc["id"],
+        "user_id": str(current_user["_id"]),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "details": {"source": lead_data.source}
+    })
+    
+    if consultant:
+        owner_name = consultant["name"]
+    else:
+        owner_name = None
+    
+    return LeadResponse(**lead_doc, owner_name=owner_name)
+
+@api_router.get("/leads", response_model=List[LeadResponse])
+async def get_leads(
+    stage: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    query = {}
+    
+    if current_user["role"] == UserRole.CONSULTANT:
+        query["owner_id"] = str(current_user["_id"])
+    elif current_user["role"] == UserRole.ASSISTANT:
+        linked = current_user.get("linked_consultants", [])
+        if linked:
+            query["owner_id"] = {"$in": linked}
+    
+    if stage:
+        query["stage"] = stage
+    if owner_id:
+        query["owner_id"] = owner_id
+    
+    leads = await db.leads.find(query).to_list(1000)
+    
+    owner_ids = list(set([lead.get("owner_id") for lead in leads if lead.get("owner_id")]))
+    owners = {}
+    if owner_ids:
+        users = await db.users.find({"_id": {"$in": [ObjectId(oid) for oid in owner_ids]}}).to_list(1000)
+        owners = {str(user["_id"]): user["name"] for user in users}
+    
+    return [
+        LeadResponse(
+            id=str(lead["_id"]),
+            name=lead["name"],
+            surname=lead.get("surname"),
+            email=lead.get("email"),
+            phone=lead["phone"],
+            source=lead["source"],
+            campaign=lead.get("campaign"),
+            stage=lead["stage"],
+            owner_id=lead.get("owner_id"),
+            owner_name=owners.get(lead.get("owner_id")),
+            tags=lead.get("tags", []),
+            notes=lead.get("notes"),
+            form_answers=lead.get("form_answers"),
+            created_at=lead.get("created_at", ""),
+            updated_at=lead.get("updated_at", ""),
+            last_contact=lead.get("last_contact")
+        )
+        for lead in leads
+    ]
+
+@api_router.get("/leads/{lead_id}", response_model=LeadResponse)
+async def get_lead(lead_id: str, current_user: dict = Depends(get_current_user)):
+    lead = await db.leads.find_one({"_id": ObjectId(lead_id)})
+    
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    
+    owner_name = None
+    if lead.get("owner_id"):
+        owner = await db.users.find_one({"_id": ObjectId(lead["owner_id"])})
+        if owner:
+            owner_name = owner["name"]
+    
+    return LeadResponse(
+        id=str(lead["_id"]),
+        name=lead["name"],
+        surname=lead.get("surname"),
+        email=lead.get("email"),
+        phone=lead["phone"],
+        source=lead["source"],
+        campaign=lead.get("campaign"),
+        stage=lead["stage"],
+        owner_id=lead.get("owner_id"),
+        owner_name=owner_name,
+        tags=lead.get("tags", []),
+        notes=lead.get("notes"),
+        form_answers=lead.get("form_answers"),
+        created_at=lead.get("created_at", ""),
+        updated_at=lead.get("updated_at", ""),
+        last_contact=lead.get("last_contact")
+    )
+
+@api_router.put("/leads/{lead_id}")
+async def update_lead(lead_id: str, lead_update: LeadUpdate, current_user: dict = Depends(get_current_user)):
+    lead = await db.leads.find_one({"_id": ObjectId(lead_id)})
+    
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    
+    update_data = {k: v for k, v in lead_update.model_dump().items() if v is not None}
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    if "stage" in update_data:
+        await db.audit_logs.insert_one({
+            "action": "stage_changed",
+            "lead_id": lead_id,
+            "user_id": str(current_user["_id"]),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "details": {"from": lead["stage"], "to": update_data["stage"]}
+        })
+    
+    await db.leads.update_one({"_id": ObjectId(lead_id)}, {"$set": update_data})
+    
+    return {"success": True}
+
+@api_router.post("/leads/{lead_id}/reassign")
+async def reassign_lead(lead_id: str, new_owner_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Only managers can reassign leads")
+    
+    await db.leads.update_one(
+        {"_id": ObjectId(lead_id)},
+        {"$set": {"owner_id": new_owner_id, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    await db.audit_logs.insert_one({
+        "action": "lead_reassigned",
+        "lead_id": lead_id,
+        "user_id": str(current_user["_id"]),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "details": {"new_owner_id": new_owner_id}
+    })
+    
+    return {"success": True}
+
+@api_router.post("/activities")
+async def create_activity(activity: ActivityCreate, current_user: dict = Depends(get_current_user)):
+    activity_doc = {
+        "lead_id": activity.lead_id,
+        "user_id": str(current_user["_id"]),
+        "activity_type": activity.activity_type,
+        "content": activity.content,
+        "notes": activity.notes,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.activities.insert_one(activity_doc)
+    
+    await db.leads.update_one(
+        {"_id": ObjectId(activity.lead_id)},
+        {"$set": {"last_contact": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    return {"success": True}
+
+@api_router.get("/activities/{lead_id}")
+async def get_activities(lead_id: str, current_user: dict = Depends(get_current_user)):
+    activities = await db.activities.find({"lead_id": lead_id}).sort("created_at", -1).to_list(100)
+    
+    user_ids = list(set([act["user_id"] for act in activities]))
+    users = {}
+    if user_ids:
+        user_docs = await db.users.find({"_id": {"$in": [ObjectId(uid) for uid in user_ids]}}).to_list(100)
+        users = {str(u["_id"]): u["name"] for u in user_docs}
+    
+    return [
+        {
+            "id": str(act["_id"]),
+            "lead_id": act["lead_id"],
+            "user_id": act["user_id"],
+            "user_name": users.get(act["user_id"]),
+            "activity_type": act["activity_type"],
+            "content": act["content"],
+            "notes": act.get("notes"),
+            "created_at": act["created_at"]
+        }
+        for act in activities
+    ]
+
+@api_router.post("/deals")
+async def create_deal(deal: DealCreate, current_user: dict = Depends(get_current_user)):
+    deal_doc = {
+        "lead_id": deal.lead_id,
+        "deal_date": deal.deal_date,
+        "closed_by": deal.closed_by,
+        "to_by": deal.to_by,
+        "payment_type": deal.payment_type,
+        "sales_value": deal.sales_value,
+        "term": deal.term,
+        "units": deal.units,
+        "joining_fee": deal.joining_fee,
+        "debit_order_value": deal.debit_order_value,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    result = await db.deals.insert_one(deal_doc)
+    
+    await db.leads.update_one(
+        {"_id": ObjectId(deal.lead_id)},
+        {"$set": {"stage": LeadStage.CLOSED_WON}}
+    )
+    
+    return {"success": True, "deal_id": str(result.inserted_id)}
+
+@api_router.get("/deals")
+async def get_deals(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    query = {}
+    
+    if from_date and to_date:
+        query["deal_date"] = {"$gte": from_date, "$lte": to_date}
+    
+    deals = await db.deals.find(query).to_list(1000)
+    
+    return [
+        {
+            "id": str(deal["_id"]),
+            "lead_id": deal["lead_id"],
+            "deal_date": deal["deal_date"],
+            "closed_by": deal["closed_by"],
+            "to_by": deal["to_by"],
+            "payment_type": deal["payment_type"],
+            "sales_value": deal.get("sales_value"),
+            "term": deal.get("term"),
+            "units": deal.get("units"),
+            "joining_fee": deal.get("joining_fee"),
+            "debit_order_value": deal.get("debit_order_value"),
+            "created_at": deal["created_at"]
+        }
+        for deal in deals
+    ]
+
+@api_router.get("/dashboard/stats")
+async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
+    query = {}
+    
+    if current_user["role"] == UserRole.CONSULTANT:
+        query["owner_id"] = str(current_user["_id"])
+    
+    total_leads = await db.leads.count_documents(query)
+    
+    closed_won_query = {**query, "stage": LeadStage.CLOSED_WON}
+    closed_won = await db.leads.count_documents(closed_won_query)
+    
+    conversion_rate = (closed_won / total_leads * 100) if total_leads > 0 else 0
+    
+    deals_query = {}
+    if current_user["role"] == UserRole.CONSULTANT:
+        deals_query["closed_by"] = str(current_user["_id"])
+    
+    deals = await db.deals.find(deals_query).to_list(1000)
+    
+    invalid_lead_ids = []
+    invalid_leads = await db.leads.find({"stage": LeadStage.INVALID}).to_list(1000)
+    invalid_lead_ids = [str(lead["_id"]) for lead in invalid_leads]
+    
+    cash_total = sum(
+        d.get("sales_value", 0) or 0 
+        for d in deals 
+        if d["payment_type"] == "Cash" and d["lead_id"] not in invalid_lead_ids
+    )
+    debit_total = sum(
+        d.get("debit_order_value", 0) or 0 
+        for d in deals 
+        if d["payment_type"] == "Debit Order" and d["lead_id"] not in invalid_lead_ids
+    )
+    total_units = sum(
+        d.get("units", 0) or 0 
+        for d in deals 
+        if d["lead_id"] not in invalid_lead_ids
+    )
+    
+    return {
+        "total_leads": total_leads,
+        "closed_won": closed_won,
+        "conversion_rate": round(conversion_rate, 2),
+        "cash_sales": round(cash_total, 2),
+        "debit_sales": round(debit_total, 2),
+        "total_units": total_units
+    }
+
+@api_router.get("/settings")
+async def get_settings(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can access settings")
+    
+    settings = await db.settings.find_one({"key": "system_settings"})
+    
+    if not settings:
+        default_settings = {
+            "key": "system_settings",
+            "auto_followup_hours": 12,
+            "auto_reassign_hours": 72,
+            "whatsapp_template": "Hi {name}, thank you for your interest in Revival Fitness! I'm {consultant} and I'll be helping you today. When would be a good time for you to visit our gym?",
+            "logo_url": "https://images.pexels.com/photos/7151700/pexels-photo-7151700.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+        }
+        await db.settings.insert_one(default_settings)
+        return default_settings
+    
+    return settings
+
+@api_router.put("/settings")
+async def update_settings(settings_update: SettingsUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can update settings")
+    
+    update_data = {k: v for k, v in settings_update.model_dump().items() if v is not None}
+    
+    await db.settings.update_one(
+        {"key": "system_settings"},
+        {"$set": update_data},
+        upsert=True
+    )
+    
+    return {"success": True}
+
+@api_router.post("/appointments")
+async def create_appointment(appointment: AppointmentCreate, current_user: dict = Depends(get_current_user)):
+    appointment_doc = {
+        "lead_id": appointment.lead_id,
+        "scheduled_at": appointment.scheduled_at,
+        "notes": appointment.notes,
+        "booked_by": appointment.booked_by or str(current_user["_id"]),
+        "created_by": str(current_user["_id"]),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "reminder_24h_sent": False,
+        "reminder_2h_sent": False
+    }
+    
+    result = await db.appointments.insert_one(appointment_doc)
+    
+    await db.leads.update_one(
+        {"_id": ObjectId(appointment.lead_id)},
+        {"$set": {"stage": LeadStage.APPOINTMENT_SET}}
+    )
+    
+    return {"success": True, "appointment_id": str(result.inserted_id)}
+
+@api_router.get("/appointments")
+async def get_appointments(
+    date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    query = {}
+    
+    if date:
+        query["scheduled_at"] = {"$regex": f"^{date}"}
+    
+    if current_user["role"] == UserRole.CONSULTANT:
+        lead_ids = await db.leads.find(
+            {"owner_id": str(current_user["_id"])},
+            {"_id": 1}
+        ).to_list(1000)
+        lead_id_strs = [str(lead["_id"]) for lead in lead_ids]
+        query["lead_id"] = {"$in": lead_id_strs}
+    elif current_user["role"] == UserRole.ASSISTANT:
+        linked = current_user.get("linked_consultants", [])
+        lead_ids = await db.leads.find(
+            {"owner_id": {"$in": linked}},
+            {"_id": 1}
+        ).to_list(1000)
+        lead_id_strs = [str(lead["_id"]) for lead in lead_ids]
+        query["$or"] = [
+            {"lead_id": {"$in": lead_id_strs}},
+            {"booked_by": str(current_user["_id"])}
+        ]
+    
+    appointments = await db.appointments.find(query).sort("scheduled_at", 1).to_list(1000)
+    
+    lead_ids = [apt["lead_id"] for apt in appointments]
+    leads_dict = {}
+    if lead_ids:
+        leads = await db.leads.find({"_id": {"$in": [ObjectId(lid) for lid in lead_ids]}}).to_list(1000)
+        leads_dict = {str(lead["_id"]): lead for lead in leads}
+    
+    booked_by_ids = list(set([apt.get("booked_by") for apt in appointments if apt.get("booked_by")]))
+    owner_ids = list(set([leads_dict.get(apt["lead_id"], {}).get("owner_id") for apt in appointments if leads_dict.get(apt["lead_id"], {}).get("owner_id")]))
+    all_user_ids = list(set(booked_by_ids + owner_ids))
+    
+    users_dict = {}
+    if all_user_ids:
+        users = await db.users.find({"_id": {"$in": [ObjectId(uid) for uid in all_user_ids]}}).to_list(1000)
+        users_dict = {str(user["_id"]): user["name"] for user in users}
+    
+    return [
+        {
+            "id": str(apt["_id"]),
+            "lead_id": apt["lead_id"],
+            "lead_name": leads_dict.get(apt["lead_id"], {}).get("name", "Unknown"),
+            "lead_surname": leads_dict.get(apt["lead_id"], {}).get("surname"),
+            "consultant_name": users_dict.get(leads_dict.get(apt["lead_id"], {}).get("owner_id")),
+            "booked_by_name": users_dict.get(apt.get("booked_by")),
+            "scheduled_at": apt["scheduled_at"],
+            "notes": apt.get("notes"),
+            "reminder_24h_sent": apt.get("reminder_24h_sent", False),
+            "reminder_2h_sent": apt.get("reminder_2h_sent", False),
+            "created_at": apt["created_at"]
+        }
+        for apt in appointments
+    ]
+
+@api_router.put("/appointments/{appointment_id}")
+async def update_appointment(
+    appointment_id: str,
+    updates: Dict[str, Any],
+    current_user: dict = Depends(get_current_user)
+):
+    await db.appointments.update_one(
+        {"_id": ObjectId(appointment_id)},
+        {"$set": updates}
+    )
+    return {"success": True}
+
+@api_router.get("/audit-logs")
+async def get_audit_logs(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    logs = await db.audit_logs.find({}).sort("timestamp", -1).limit(100).to_list(100)
+    
+    return [
+        {
+            "id": str(log["_id"]),
+            "action": log["action"],
+            "lead_id": log.get("lead_id"),
+            "user_id": log["user_id"],
+            "timestamp": log["timestamp"],
+            "details": log.get("details", {})
+        }
+        for log in logs
+    ]
+
+@api_router.post("/whatsapp/send")
+async def send_whatsapp(message: WhatsAppMessageRequest, current_user: dict = Depends(get_current_user)):
+    await db.message_logs.insert_one({
+        "phone_number": message.phone_number,
+        "message": message.message,
+        "lead_id": message.lead_id,
+        "sent_by": str(current_user["_id"]),
+        "sent_at": datetime.now(timezone.utc).isoformat(),
+        "status": "pending"
+    })
+    
+    return {"success": True, "message": "Message queued for sending"}
+
+@api_router.get("/whatsapp/status")
+async def whatsapp_status():
+    return {
+        "connected": False,
+        "message": "WhatsApp Web automation not configured"
+    }
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -77,12 +789,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+@app.on_event("startup")
+async def startup_db():
+    admin_exists = await db.users.find_one({"role": UserRole.ADMIN})
+    
+    if not admin_exists:
+        admin_user = {
+            "email": "admin@revivalfitness.com",
+            "password": pwd_context.hash("Admin@2026"),
+            "name": "System Admin",
+            "role": UserRole.ADMIN,
+            "phone": "+27123456789",
+            "active": True,
+            "linked_consultants": [],
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.users.insert_one(admin_user)
+        logger.info("Admin user created: admin@revivalfitness.com / Admin@2026")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
