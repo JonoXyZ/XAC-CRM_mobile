@@ -202,7 +202,6 @@ const Dashboard = ({ user }) => {
                 </div>
               </Card>
           </>
-          </>
         )}
       </div>
     </Layout>
