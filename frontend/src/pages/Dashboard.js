@@ -9,10 +9,12 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Dashboard = ({ user }) => {
   const [stats, setStats] = useState(null);
+  const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchStats();
+    fetchTodayAppointments();
   }, []);
 
   const fetchStats = async () => {
@@ -26,6 +28,19 @@ const Dashboard = ({ user }) => {
       console.error('Failed to fetch stats:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTodayAppointments = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const today = new Date().toISOString().split('T')[0];
+      const response = await axios.get(`${API_URL}/api/appointments?date=${today}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAppointments(response.data);
+    } catch (error) {
+      console.error('Failed to fetch appointments:', error);
     }
   };
 
@@ -94,6 +109,49 @@ const Dashboard = ({ user }) => {
               </Card>
             </div>
 
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="stat-card p-6" data-testid="units-sold-card">
+                <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Performance Summary</h3>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-zinc-400">Total Units Sold</span>
+                      <span className="font-bold text-zinc-50">{stats?.total_units || 0}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-zinc-400">Closed Deals</span>
+                      <span className="font-bold text-zinc-50">{stats?.closed_won || 0}</span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="stat-card p-6" data-testid="todays-appointments-card">
+                <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Today's Appointments</h3>
+                <div className="space-y-3 max-h-40 overflow-y-auto">
+                  {appointments.length > 0 ? (
+                    appointments.map((apt) => (
+                      <div key={apt.id} className="flex items-center justify-between text-sm p-2 bg-zinc-950 rounded">
+                        <div>
+                          <p className="font-semibold text-zinc-100">
+                            {apt.scheduled_at.split('T')[1]?.substring(0, 5)} - {apt.lead_name} {apt.lead_surname || ''}
+                          </p>
+                          <p className="text-xs text-zinc-400">{apt.consultant_name}</p>
+                          {apt.booked_by_name && apt.booked_by_name !== apt.consultant_name && (
+                            <p className="text-xs text-cyan-500">Booked by: {apt.booked_by_name}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-zinc-500">No appointments today</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+
             <Card className="stat-card p-6" data-testid="sales-chart-card">
               <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Sales Trend</h3>
               <ResponsiveContainer width="100%" height={300}>
@@ -126,9 +184,8 @@ const Dashboard = ({ user }) => {
               </ResponsiveContainer>
             </Card>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card className="stat-card p-6" data-testid="recent-activity-card">
-                <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Recent Activity</h3>
+            <Card className="stat-card p-6" data-testid="recent-activity-card">
+              <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Recent Activity</h3>
                 <div className="space-y-3">
                   <div className="flex items-center gap-3 text-sm text-zinc-300">
                     <div className="w-2 h-2 rounded-full bg-lime-400"></div>
@@ -144,25 +201,7 @@ const Dashboard = ({ user }) => {
                   </div>
                 </div>
               </Card>
-
-              <Card className="stat-card p-6" data-testid="units-sold-card">
-                <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Performance Summary</h3>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-zinc-400">Total Units Sold</span>
-                      <span className="font-bold text-zinc-50">{stats?.total_units || 0}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-zinc-400">Closed Deals</span>
-                      <span className="font-bold text-zinc-50">{stats?.closed_won || 0}</span>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </div>
+          </>
           </>
         )}
       </div>

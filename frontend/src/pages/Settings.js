@@ -17,7 +17,8 @@ import {
   Image, 
   FileText,
   UserPlus,
-  Trash
+  Trash,
+  PencilSimple
 } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -26,6 +27,8 @@ const Settings = ({ user }) => {
   const [settings, setSettings] = useState(null);
   const [users, setUsers] = useState([]);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [newUser, setNewUser] = useState({
     name: '',
@@ -105,6 +108,32 @@ const Settings = ({ user }) => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       toast.success('User status updated');
+      fetchUsers();
+    } catch (error) {
+      toast.error('Failed to update user');
+    }
+  };
+
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      const updates = {
+        name: selectedUser.name,
+        email: selectedUser.email,
+        phone: selectedUser.phone,
+        role: selectedUser.role
+      };
+      if (selectedUser.password) {
+        updates.password = selectedUser.password;
+      }
+      await axios.put(
+        `${API_URL}/api/users/${selectedUser.id}`,
+        updates,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('User updated successfully');
+      setShowEditUserModal(false);
       fetchUsers();
     } catch (error) {
       toast.error('Failed to update user');
@@ -212,6 +241,29 @@ const Settings = ({ user }) => {
                 </ol>
               </div>
             </Card>
+
+            <Card className="stat-card p-6" data-testid="google-calendar-card">
+              <div className="flex items-start gap-4">
+                <FileText size={48} weight="duotone" className="text-amber-500" />
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-zinc-100">Google Calendar Integration</h3>
+                  <p className="text-sm text-zinc-400 mt-1">
+                    Sync appointments to Google Calendar automatically
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-zinc-950 rounded-md border border-zinc-800">
+                <h4 className="text-sm font-bold text-zinc-300 mb-3">Coming Soon</h4>
+                <p className="text-sm text-zinc-400">
+                  Configure per-consultant Google Calendar integration. Visit{' '}
+                  <a href="https://revivalfitness.co.za" target="_blank" rel="noopener noreferrer" className="text-lime-400 hover:underline">
+                    revivalfitness.co.za
+                  </a>{' '}
+                  for more information.
+                </p>
+              </div>
+            </Card>
           </TabsContent>
 
           <TabsContent value="users" className="space-y-6">
@@ -249,11 +301,23 @@ const Settings = ({ user }) => {
                         )}
                       </div>
                     </div>
-                    <Switch
-                      checked={u.active}
-                      onCheckedChange={() => handleToggleUserStatus(u.id, u.active)}
-                      data-testid={`user-toggle-${u.id}`}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={() => {
+                          setSelectedUser(u);
+                          setShowEditUserModal(true);
+                        }}
+                        data-testid={`edit-user-${u.id}`}
+                        className="p-2 bg-zinc-800 hover:bg-zinc-700"
+                      >
+                        <PencilSimple size={18} />
+                      </Button>
+                      <Switch
+                        checked={u.active}
+                        onCheckedChange={() => handleToggleUserStatus(u.id, u.active)}
+                        data-testid={`user-toggle-${u.id}`}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -443,6 +507,95 @@ const Settings = ({ user }) => {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditUserModal} onOpenChange={setShowEditUserModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="edit-user-modal">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-zinc-50">Edit User</DialogTitle>
+          </DialogHeader>
+          {selectedUser && (
+            <form onSubmit={handleUpdateUser} className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Full Name</Label>
+                <Input
+                  value={selectedUser.name}
+                  onChange={(e) => setSelectedUser({ ...selectedUser, name: e.target.value })}
+                  required
+                  data-testid="edit-user-name-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Email</Label>
+                <Input
+                  type="email"
+                  value={selectedUser.email}
+                  onChange={(e) => setSelectedUser({ ...selectedUser, email: e.target.value })}
+                  required
+                  data-testid="edit-user-email-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">New Password (leave blank to keep current)</Label>
+                <Input
+                  type="password"
+                  value={selectedUser.password || ''}
+                  onChange={(e) => setSelectedUser({ ...selectedUser, password: e.target.value })}
+                  data-testid="edit-user-password-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                  placeholder="Enter new password..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Phone</Label>
+                <Input
+                  value={selectedUser.phone || ''}
+                  onChange={(e) => setSelectedUser({ ...selectedUser, phone: e.target.value })}
+                  data-testid="edit-user-phone-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Role</Label>
+                <Select
+                  value={selectedUser.role}
+                  onValueChange={(value) => setSelectedUser({ ...selectedUser, role: value })}
+                  data-testid="edit-user-role-select"
+                >
+                  <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-800">
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="sales_manager">Sales Manager</SelectItem>
+                    <SelectItem value="club_manager">Club Manager</SelectItem>
+                    <SelectItem value="consultant">Consultant</SelectItem>
+                    <SelectItem value="assistant">Assistant</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  onClick={() => setShowEditUserModal(false)}
+                  data-testid="cancel-edit-user-button"
+                  className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  data-testid="submit-edit-user-button"
+                  className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+                >
+                  Update User
+                </Button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </Layout>

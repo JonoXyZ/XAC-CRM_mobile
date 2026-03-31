@@ -9,7 +9,7 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Phone, Envelope, Tag } from '@phosphor-icons/react';
+import { Plus, Phone, Envelope, Tag, PencilSimple, CalendarPlus, SquaresFour, Table } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -29,8 +29,11 @@ const Leads = ({ user }) => {
   const [leads, setLeads] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState('kanban');
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
+  const [showEditLeadModal, setShowEditLeadModal] = useState(false);
   const [showDealModal, setShowDealModal] = useState(false);
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [newLead, setNewLead] = useState({
     name: '',
@@ -50,6 +53,10 @@ const Leads = ({ user }) => {
     units: '',
     joining_fee: '',
     debit_order_value: ''
+  });
+  const [appointmentData, setAppointmentData] = useState({
+    scheduled_at: '',
+    notes: ''
   });
 
   useEffect(() => {
@@ -99,6 +106,51 @@ const Leads = ({ user }) => {
     }
   };
 
+  const handleUpdateLead = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(
+        `${API_URL}/api/leads/${selectedLead.id}`,
+        {
+          name: selectedLead.name,
+          surname: selectedLead.surname,
+          email: selectedLead.email,
+          phone: selectedLead.phone,
+          notes: selectedLead.notes
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('Lead updated successfully');
+      setShowEditLeadModal(false);
+      fetchLeads();
+    } catch (error) {
+      toast.error('Failed to update lead');
+    }
+  };
+
+  const handleBookAppointment = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `${API_URL}/api/appointments`,
+        {
+          lead_id: selectedLead.id,
+          scheduled_at: appointmentData.scheduled_at,
+          notes: appointmentData.notes
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('Appointment booked successfully');
+      setShowAppointmentModal(false);
+      setAppointmentData({ scheduled_at: '', notes: '' });
+      fetchLeads();
+    } catch (error) {
+      toast.error('Failed to book appointment');
+    }
+  };
+
   const handleDragEnd = async (result) => {
     if (!result.destination) return;
 
@@ -128,6 +180,21 @@ const Leads = ({ user }) => {
       );
       
       setLeads(leads.map(l => l.id === draggableId ? { ...l, stage: newStage } : l));
+      toast.success('Lead stage updated');
+    } catch (error) {
+      toast.error('Failed to update lead');
+    }
+  };
+
+  const handleStageChange = async (leadId, newStage) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(
+        `${API_URL}/api/leads/${leadId}`,
+        { stage: newStage },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setLeads(leads.map(l => l.id === leadId ? { ...l, stage: newStage } : l));
       toast.success('Lead stage updated');
     } catch (error) {
       toast.error('Failed to update lead');
@@ -174,19 +241,37 @@ const Leads = ({ user }) => {
             </h1>
             <p className="mt-2 text-base text-zinc-400">Manage and track your leads</p>
           </div>
-          <Button
-            onClick={() => setShowNewLeadModal(true)}
-            data-testid="add-lead-button"
-            className="bg-lime-400 text-zinc-950 font-bold rounded-md px-4 py-2 hover:bg-lime-500 active:scale-95 flex items-center gap-2"
-          >
-            <Plus size={20} weight="bold" />
-            Add Lead
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="flex gap-2 bg-zinc-900 p-1 rounded-md border border-zinc-800">
+              <Button
+                onClick={() => setViewMode('kanban')}
+                data-testid="kanban-view-button"
+                className={`px-3 py-2 ${viewMode === 'kanban' ? 'bg-lime-400 text-zinc-950' : 'bg-transparent text-zinc-400 hover:text-zinc-50'}`}
+              >
+                <SquaresFour size={20} weight={viewMode === 'kanban' ? 'fill' : 'regular'} />
+              </Button>
+              <Button
+                onClick={() => setViewMode('table')}
+                data-testid="table-view-button"
+                className={`px-3 py-2 ${viewMode === 'table' ? 'bg-lime-400 text-zinc-950' : 'bg-transparent text-zinc-400 hover:text-zinc-50'}`}
+              >
+                <Table size={20} weight={viewMode === 'table' ? 'fill' : 'regular'} />
+              </Button>
+            </div>
+            <Button
+              onClick={() => setShowNewLeadModal(true)}
+              data-testid="add-lead-button"
+              className="bg-lime-400 text-zinc-950 font-bold rounded-md px-4 py-2 hover:bg-lime-500 active:scale-95 flex items-center gap-2"
+            >
+              <Plus size={20} weight="bold" />
+              Add Lead
+            </Button>
+          </div>
         </div>
 
         {loading ? (
           <div className="text-center py-12 text-zinc-400">Loading leads...</div>
-        ) : (
+        ) : viewMode === 'kanban' ? (
           <DragDropContext onDragEnd={handleDragEnd}>
             <div className="kanban-container" data-testid="kanban-board">
               {STAGES.map((stage, stageIndex) => (
@@ -209,13 +294,28 @@ const Leads = ({ user }) => {
                           <Draggable key={lead.id} draggableId={lead.id} index={index}>
                             {(provided) => (
                               <div
-                                className="kanban-card"
+                                className="kanban-card relative group"
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
                                 data-testid={`lead-card-${lead.id}`}
                               >
-                                <h4 className="font-semibold text-zinc-100 mb-2">{lead.name}</h4>
+                                <div className="flex justify-between items-start mb-2">
+                                  <h4 className="font-semibold text-zinc-100">
+                                    {lead.name} {lead.surname || ''}
+                                  </h4>
+                                  <Button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedLead(lead);
+                                      setShowEditLeadModal(true);
+                                    }}
+                                    data-testid={`edit-lead-${lead.id}`}
+                                    className="opacity-0 group-hover:opacity-100 p-1 h-auto bg-zinc-800 hover:bg-zinc-700"
+                                  >
+                                    <PencilSimple size={16} />
+                                  </Button>
+                                </div>
                                 <div className="space-y-1 text-xs text-zinc-400">
                                   {lead.phone && (
                                     <div className="flex items-center gap-2">
@@ -233,12 +333,29 @@ const Leads = ({ user }) => {
                                     <Tag size={14} />
                                     <span>{lead.source}</span>
                                   </div>
+                                  {lead.notes && (
+                                    <div className="mt-2 p-2 bg-zinc-950 rounded text-xs text-zinc-500">
+                                      {lead.notes}
+                                    </div>
+                                  )}
                                   {lead.owner_name && (
                                     <div className="mt-2 text-xs text-zinc-500">
                                       Owner: {lead.owner_name}
                                     </div>
                                   )}
                                 </div>
+                                <Button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedLead(lead);
+                                    setShowAppointmentModal(true);
+                                  }}
+                                  data-testid={`book-appointment-${lead.id}`}
+                                  className="w-full mt-3 bg-cyan-500 text-zinc-950 font-bold hover:bg-cyan-600 flex items-center justify-center gap-2"
+                                >
+                                  <CalendarPlus size={16} weight="bold" />
+                                  Book Appointment
+                                </Button>
                               </div>
                             )}
                           </Draggable>
@@ -251,9 +368,79 @@ const Leads = ({ user }) => {
               ))}
             </div>
           </DragDropContext>
+        ) : (
+          <div className="bg-zinc-900/40 border border-zinc-800 rounded-lg overflow-hidden" data-testid="table-view">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-zinc-900/80 text-zinc-400 font-semibold uppercase text-xs">
+                <tr>
+                  <th className="p-4">Name</th>
+                  <th className="p-4">Phone</th>
+                  <th className="p-4">Email</th>
+                  <th className="p-4">Source</th>
+                  <th className="p-4">Owner</th>
+                  <th className="p-4">Stage</th>
+                  <th className="p-4">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map((lead) => (
+                  <tr key={lead.id} className="border-t border-zinc-800/50 hover:bg-zinc-800/30" data-testid={`table-row-${lead.id}`}>
+                    <td className="p-4 font-semibold text-zinc-100">
+                      {lead.name} {lead.surname || ''}
+                    </td>
+                    <td className="p-4 text-zinc-300">{lead.phone}</td>
+                    <td className="p-4 text-zinc-300">{lead.email || '-'}</td>
+                    <td className="p-4 text-zinc-300">{lead.source}</td>
+                    <td className="p-4 text-zinc-300">{lead.owner_name || '-'}</td>
+                    <td className="p-4">
+                      <Select
+                        value={lead.stage}
+                        onValueChange={(value) => handleStageChange(lead.id, value)}
+                        data-testid={`stage-select-${lead.id}`}
+                      >
+                        <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50 w-48">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-zinc-900 border-zinc-800">
+                          {STAGES.map(stage => (
+                            <SelectItem key={stage} value={stage}>{stage}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => {
+                            setSelectedLead(lead);
+                            setShowEditLeadModal(true);
+                          }}
+                          data-testid={`table-edit-${lead.id}`}
+                          className="p-2 bg-zinc-800 hover:bg-zinc-700"
+                        >
+                          <PencilSimple size={16} />
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setSelectedLead(lead);
+                            setShowAppointmentModal(true);
+                          }}
+                          data-testid={`table-book-${lead.id}`}
+                          className="p-2 bg-cyan-500 hover:bg-cyan-600"
+                        >
+                          <CalendarPlus size={16} />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
+      {/* New Lead Modal */}
       <Dialog open={showNewLeadModal} onOpenChange={setShowNewLeadModal}>
         <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="new-lead-modal">
           <DialogHeader>
@@ -261,11 +448,8 @@ const Leads = ({ user }) => {
           </DialogHeader>
           <form onSubmit={handleCreateLead} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name" className="text-xs tracking-wider uppercase font-bold text-zinc-500">
-                First Name
-              </Label>
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">First Name</Label>
               <Input
-                id="name"
                 value={newLead.name}
                 onChange={(e) => setNewLead({ ...newLead, name: e.target.value })}
                 required
@@ -274,11 +458,8 @@ const Leads = ({ user }) => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="surname" className="text-xs tracking-wider uppercase font-bold text-zinc-500">
-                Surname
-              </Label>
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Surname</Label>
               <Input
-                id="surname"
                 value={newLead.surname}
                 onChange={(e) => setNewLead({ ...newLead, surname: e.target.value })}
                 data-testid="new-lead-surname-input"
@@ -286,11 +467,8 @@ const Leads = ({ user }) => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-xs tracking-wider uppercase font-bold text-zinc-500">
-                Email
-              </Label>
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Email</Label>
               <Input
-                id="email"
                 type="email"
                 value={newLead.email}
                 onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
@@ -299,11 +477,8 @@ const Leads = ({ user }) => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="phone" className="text-xs tracking-wider uppercase font-bold text-zinc-500">
-                Phone
-              </Label>
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Phone</Label>
               <Input
-                id="phone"
                 value={newLead.phone}
                 onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })}
                 required
@@ -312,9 +487,7 @@ const Leads = ({ user }) => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="source" className="text-xs tracking-wider uppercase font-bold text-zinc-500">
-                Source
-              </Label>
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Source</Label>
               <Select
                 value={newLead.source}
                 onValueChange={(value) => setNewLead({ ...newLead, source: value })}
@@ -331,6 +504,16 @@ const Leads = ({ user }) => {
                   <SelectItem value="Walk-in">Walk-in</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Notes</Label>
+              <textarea
+                value={newLead.notes}
+                onChange={(e) => setNewLead({ ...newLead, notes: e.target.value })}
+                data-testid="new-lead-notes-input"
+                className="w-full min-h-[80px] bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-50"
+                placeholder="Add any notes about this lead..."
+              />
             </div>
             <div className="flex gap-3">
               <Button
@@ -353,6 +536,142 @@ const Leads = ({ user }) => {
         </DialogContent>
       </Dialog>
 
+      {/* Edit Lead Modal */}
+      <Dialog open={showEditLeadModal} onOpenChange={setShowEditLeadModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="edit-lead-modal">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-zinc-50">Edit Lead</DialogTitle>
+          </DialogHeader>
+          {selectedLead && (
+            <form onSubmit={handleUpdateLead} className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">First Name</Label>
+                <Input
+                  value={selectedLead.name}
+                  onChange={(e) => setSelectedLead({ ...selectedLead, name: e.target.value })}
+                  required
+                  data-testid="edit-lead-name-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Surname</Label>
+                <Input
+                  value={selectedLead.surname || ''}
+                  onChange={(e) => setSelectedLead({ ...selectedLead, surname: e.target.value })}
+                  data-testid="edit-lead-surname-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Email</Label>
+                <Input
+                  type="email"
+                  value={selectedLead.email || ''}
+                  onChange={(e) => setSelectedLead({ ...selectedLead, email: e.target.value })}
+                  data-testid="edit-lead-email-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Phone</Label>
+                <Input
+                  value={selectedLead.phone}
+                  onChange={(e) => setSelectedLead({ ...selectedLead, phone: e.target.value })}
+                  required
+                  data-testid="edit-lead-phone-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Notes</Label>
+                <textarea
+                  value={selectedLead.notes || ''}
+                  onChange={(e) => setSelectedLead({ ...selectedLead, notes: e.target.value })}
+                  data-testid="edit-lead-notes-input"
+                  className="w-full min-h-[80px] bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-50"
+                />
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  onClick={() => setShowEditLeadModal(false)}
+                  data-testid="cancel-edit-lead-button"
+                  className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  data-testid="submit-edit-lead-button"
+                  className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+                >
+                  Update Lead
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Book Appointment Modal */}
+      <Dialog open={showAppointmentModal} onOpenChange={setShowAppointmentModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="book-appointment-modal">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-zinc-50">Book Appointment</DialogTitle>
+          </DialogHeader>
+          {selectedLead && (
+            <form onSubmit={handleBookAppointment} className="space-y-4">
+              <div className="p-3 bg-zinc-950 rounded-md border border-zinc-800">
+                <p className="text-sm text-zinc-400">Lead:</p>
+                <p className="font-semibold text-zinc-100">
+                  {selectedLead.name} {selectedLead.surname || ''}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Date & Time</Label>
+                <Input
+                  type="datetime-local"
+                  value={appointmentData.scheduled_at}
+                  onChange={(e) => setAppointmentData({ ...appointmentData, scheduled_at: e.target.value })}
+                  required
+                  data-testid="appointment-datetime-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Notes</Label>
+                <Input
+                  value={appointmentData.notes}
+                  onChange={(e) => setAppointmentData({ ...appointmentData, notes: e.target.value })}
+                  data-testid="appointment-notes-input"
+                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                  placeholder="Any special notes for this appointment..."
+                />
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  onClick={() => setShowAppointmentModal(false)}
+                  data-testid="cancel-appointment-button"
+                  className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  data-testid="submit-appointment-button"
+                  className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+                >
+                  Book Appointment
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Deal Modal (same as before) */}
       <Dialog open={showDealModal} onOpenChange={setShowDealModal}>
         <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50 max-w-2xl" data-testid="deal-modal">
           <DialogHeader>
