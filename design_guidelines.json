@@ -1,0 +1,159 @@
+{
+  "project_name": "XAC CRM - Revival Fitness",
+  "theme": "dark",
+  "archetype": "Archetype 2: The Performance Pro (Elite Athleticism & Precision) + Corporate Blend",
+  "rationale": "Fitness apps thrive on dark, high-energy visuals. Combining deep obsidian/carbon black with an electric neon accent (Lime/Cyan) captures the 'Performance Pro' aesthetic, while the clean typography and strict grids maintain the professional, data-dense requirements of a corporate CRM.",
+  "colors": {
+    "background_base": "bg-zinc-950",
+    "background_surface": "bg-zinc-900",
+    "background_surface_hover": "bg-zinc-800/80",
+    "primary": "bg-lime-400",
+    "primary_hover": "bg-lime-500",
+    "primary_text": "text-zinc-950",
+    "accent_secondary": "bg-cyan-500",
+    "text_main": "text-zinc-50",
+    "text_muted": "text-zinc-400",
+    "border": "border-zinc-800",
+    "border_light": "border-zinc-700/50",
+    "status": {
+      "success": "bg-emerald-500",
+      "warning": "bg-amber-500",
+      "danger": "bg-red-500",
+      "info": "bg-blue-500"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Cabinet Grotesk, sans-serif",
+      "body": "Satoshi, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl tracking-tight font-black text-zinc-50",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-bold text-zinc-50",
+      "h3": "text-xl sm:text-2xl font-semibold text-zinc-100",
+      "h4": "text-lg font-semibold text-zinc-100",
+      "body": "text-sm sm:text-base leading-relaxed text-zinc-300",
+      "label": "text-xs tracking-[0.2em] uppercase font-bold text-zinc-500"
+    }
+  },
+  "spacing_and_layout": {
+    "strategy": "MODE B: THE CONTROL ROOM GRID (Dense, functional, optimized for analytics and tables)",
+    "container_padding": "p-4 sm:p-6 lg:p-8",
+    "gap_system": {
+      "tight": "gap-2 sm:gap-3",
+      "base": "gap-4 sm:gap-6",
+      "loose": "gap-8 sm:gap-12"
+    },
+    "radius": "rounded-md"
+  },
+  "surface_strategies": {
+    "cards": "bg-zinc-900/40 border border-zinc-800 rounded-lg hover:border-zinc-700/50 transition-colors duration-200 shadow-sm",
+    "header": "sticky top-0 z-50 backdrop-blur-xl bg-zinc-950/80 border-b border-zinc-800 h-16 flex items-center px-6",
+    "sidebar": "fixed left-0 top-0 h-screen w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col",
+    "kanban_column": "bg-zinc-900/20 border border-zinc-800/60 rounded-lg p-3 flex flex-col h-full",
+    "kanban_card": "bg-zinc-900 border border-zinc-800 rounded-md p-3 shadow-md hover:-translate-y-0.5 transition-transform cursor-grab active:cursor-grabbing",
+    "glass_overlay": "backdrop-blur-md bg-zinc-950/60"
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-lime-400 text-zinc-950 font-bold rounded-md px-4 py-2 hover:bg-lime-500 transition-all active:scale-95 flex items-center justify-center gap-2",
+      "secondary": "bg-zinc-800 text-zinc-50 font-semibold rounded-md px-4 py-2 hover:bg-zinc-700 border border-zinc-700 transition-all flex items-center justify-center gap-2",
+      "ghost": "text-zinc-300 hover:text-white hover:bg-zinc-800/50 px-3 py-1.5 rounded-md transition-colors"
+    },
+    "inputs": "bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-50 focus:ring-2 focus:ring-lime-400 focus:border-transparent placeholder:text-zinc-600 w-full outline-none transition-all",
+    "tables": {
+      "wrapper": "w-full text-left text-sm text-zinc-300 border border-zinc-800 rounded-md overflow-hidden",
+      "header": "bg-zinc-900/80 text-zinc-400 font-semibold uppercase text-xs tracking-wider",
+      "row": "border-t border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
+    },
+    "badges": "px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider bg-zinc-800 text-zinc-300 border border-zinc-700"
+  },
+  "assets": {
+    "icons_library": "@phosphor-icons/react",
+    "images": [
+      {
+        "url": "https://static.prod-images.emergentagent.com/jobs/1f8cd556-26ce-4a6e-9e7c-fac0f1e1bc1f/images/2dc13ba2f25b982f50c5aa00d9411ea4fa0df903963f275c02218c7413eb2e14.png",
+        "category": "login_background",
+        "description": "Abstract sleek dark geometric background. To be used as the 50% left side visual on the Login view."
+      },
+      {
+        "url": "https://static.prod-images.emergentagent.com/jobs/1f8cd556-26ce-4a6e-9e7c-fac0f1e1bc1f/images/0312ad438bd81e1cc26618f0c9e1de00b6080446054de6852072ace0f357d757.png",
+        "category": "texture_overlay",
+        "description": "Premium gym texture. Use at 10% opacity as a background pattern in the Admin Backdoor Dashboard or Settings header."
+      },
+      {
+        "url": "https://images.pexels.com/photos/36535613/pexels-photo-36535613.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "avatar_manager",
+        "description": "Professional avatar for Manager or Admin dashboard profile pictures."
+      },
+      {
+        "url": "https://images.pexels.com/photos/262391/pexels-photo-262391.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "avatar_consultant",
+        "description": "Professional avatar for Sales Consultant profile pictures."
+      },
+      {
+        "url": "https://images.pexels.com/photos/7151700/pexels-photo-7151700.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "logo_placeholder",
+        "description": "Minimalist 'R' logo for Revival Fitness. Include UI in admin settings to allow updating this image."
+      }
+    ]
+  },
+  "views_and_pages": [
+    {
+      "name": "Login",
+      "path": "/",
+      "description": "Split screen. Immersive geometric dark texture on the left, clean corporate login form on the right. Must support different roles.",
+      "key_elements": ["Role Selector", "Email/Password Form", "Login Button"]
+    },
+    {
+      "name": "Dashboard (Role-based)",
+      "path": "/dashboard",
+      "description": "Control center using Mode B grid. Adapts based on Admin vs Manager vs Consultant.",
+      "key_elements": [
+        "KPI Metric Cards (Total Sales, Lead Conversion, Response Time)",
+        "Area Charts (Recharts) for sales tracking",
+        "Recent Activity Feed"
+      ]
+    },
+    {
+      "name": "Lead Management & Pipeline",
+      "path": "/leads",
+      "description": "Kanban style drag-and-drop pipeline interface with an option for standard List View. Horizontal scrolling for columns.",
+      "key_elements": [
+        "Pipeline Columns: New, Contacted, Engaged, Appt Set, Showed Up, Trial, Closed Won/Lost",
+        "Deal Tracking Modal: Triggers specifically when dropping a card into 'Closed Won'. Contains tabs for Cash vs Debit Order."
+      ]
+    },
+    {
+      "name": "Admin Backdoor & Integrations",
+      "path": "/settings",
+      "description": "Password-protected area for system settings. Two-column layout with vertical tabs.",
+      "key_elements": [
+        "WhatsApp Automation Card (Show mock QR code scan for Puppeteer setup)",
+        "Meta Lead Forms mapping UI",
+        "User Management & Consultant Exit Workflow (reassign all leads button)",
+        "System Logo update input"
+      ]
+    }
+  ],
+  "accessibility_and_motion": {
+    "motion": "Use Framer Motion. Keep animations fast, linear, and corporate (e.g., duration: 0.15s, opacity fades, subtle y-axis sliding). Avoid bouncy or elastic effects.",
+    "hover_states": "All interactive elements MUST clearly change on hover (e.g., background shifts, border highlights).",
+    "focus_states": "Visible focus rings are mandatory. Use ring-2 ring-lime-400 ring-offset-2 ring-offset-zinc-950.",
+    "testing": "All interactive elements MUST include a data-testid attribute in kebab-case (e.g., data-testid='submit-deal-button', data-testid='lead-stage-dropdown')."
+  },
+  "instructions_to_main_agent": [
+    "CRITICAL: XAC CRM is built purely in JavaScript (.js/.jsx). DO NOT create or use TypeScript (.ts/.tsx) files.",
+    "Install icon library: yarn add @phosphor-icons/react",
+    "Install marquee (optional for activity ticker): yarn add react-fast-marquee",
+    "Use Shadcn UI components heavily, but strip Vercel-like aesthetics and replace with our high-contrast Performance Pro dark styling (zinc-950 base, lime-400 CTA).",
+    "For the 'Closed Won' deal tracking modal, use the Shadcn Dialog component containing Shadcn Tabs. Tab 1: 'Cash' (Sales Value, Term, Units), Tab 2: 'Debit Order' (Joining Fee, Debit Order Value, Units).",
+    "Build a robust sidebar navigation (collapsible for mobile).",
+    "Ensure 'Admin Backdoor' settings includes a specific input mapped to update the logo image displayed in the nav/sidebar.",
+    "Mock the 'WhatsApp Automation' connection status. It should have a visual 'Scan QR' state.",
+    "For forms, use Shadcn Form elements with proper labeling. DO NOT use native <select>, use Shadcn Dropdown/Select.",
+    "Ensure all data-testids are implemented as requested for automated testing.",
+    "Implement the Kanban board using a CSS grid or flexbox layout with custom state management for drag-and-drop, avoiding heavy external DND libraries if possible, or use @hello-pangea/dnd."
+  ]
+}
