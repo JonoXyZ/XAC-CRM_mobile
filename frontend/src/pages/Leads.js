@@ -21,7 +21,8 @@ const STAGES = [
   'Showed Up',
   'Trial / Consultation',
   'Closed Won',
-  'Closed Lost'
+  'Closed Lost',
+  'Invalid'
 ];
 
 const Leads = ({ user }) => {
@@ -33,6 +34,7 @@ const Leads = ({ user }) => {
   const [selectedLead, setSelectedLead] = useState(null);
   const [newLead, setNewLead] = useState({
     name: '',
+    surname: '',
     email: '',
     phone: '',
     source: 'Manual',
@@ -90,7 +92,7 @@ const Leads = ({ user }) => {
       });
       toast.success('Lead created successfully');
       setShowNewLeadModal(false);
-      setNewLead({ name: '', email: '', phone: '', source: 'Manual', notes: '' });
+      setNewLead({ name: '', surname: '', email: '', phone: '', source: 'Manual', notes: '' });
       fetchLeads();
     } catch (error) {
       toast.error('Failed to create lead');
@@ -260,7 +262,7 @@ const Leads = ({ user }) => {
           <form onSubmit={handleCreateLead} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name" className="text-xs tracking-wider uppercase font-bold text-zinc-500">
-                Full Name
+                First Name
               </Label>
               <Input
                 id="name"
@@ -268,6 +270,18 @@ const Leads = ({ user }) => {
                 onChange={(e) => setNewLead({ ...newLead, name: e.target.value })}
                 required
                 data-testid="new-lead-name-input"
+                className="bg-zinc-950 border-zinc-800 text-zinc-50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="surname" className="text-xs tracking-wider uppercase font-bold text-zinc-500">
+                Surname
+              </Label>
+              <Input
+                id="surname"
+                value={newLead.surname}
+                onChange={(e) => setNewLead({ ...newLead, surname: e.target.value })}
+                data-testid="new-lead-surname-input"
                 className="bg-zinc-950 border-zinc-800 text-zinc-50"
               />
             </div>

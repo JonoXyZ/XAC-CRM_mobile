@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Leads from './pages/Leads';
+import Appointments from './pages/Appointments';
 import Settings from './pages/Settings';
 import { Toaster } from './components/ui/sonner';
 import './App.css';
@@ -41,6 +42,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Leads user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/appointments"
+          element={
+            <ProtectedRoute>
+              <Appointments user={user} />
             </ProtectedRoute>
           }
         />

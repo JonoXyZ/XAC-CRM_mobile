@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { 
   House, 
   Users, 
+  Calendar,
   GearSix, 
   SignOut,
   Barbell
@@ -22,6 +23,7 @@ const Layout = ({ children, user }) => {
   const menuItems = [
     { path: '/dashboard', icon: House, label: 'Dashboard', testId: 'nav-dashboard' },
     { path: '/leads', icon: Users, label: 'Leads', testId: 'nav-leads' },
+    { path: '/appointments', icon: Calendar, label: 'Appointments', testId: 'nav-appointments' },
   ];
 
   if (user?.role === 'admin') {
