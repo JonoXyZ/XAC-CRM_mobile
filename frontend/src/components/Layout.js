@@ -98,7 +98,7 @@ const Layout = ({ children, user }) => {
           </div>
         </div>
 
-        <nav className="flex-1 p-4" data-testid="nav-menu">
+        <nav className="flex-1 p-4 overflow-y-auto" data-testid="nav-menu">
           <ul className="space-y-2">
             {menuItems.map((item) => {
               const Icon = item.icon;
