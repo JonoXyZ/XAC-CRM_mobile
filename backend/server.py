@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Header, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -41,6 +41,7 @@ class UserRole:
     CLUB_MANAGER = "club_manager"
     CONSULTANT = "consultant"
     ASSISTANT = "assistant"
+    MARKETING_AGENT = "marketing_agent"
 
 class LeadStage:
     NEW_LEAD = "New Lead"
@@ -1470,6 +1471,242 @@ async def get_month_report_details(report_id: str, current_user: dict = Depends(
         "total_cash_sales": report["total_cash_sales"],
         "total_debit_sales": report["total_debit_sales"],
         "total_units": report["total_units"]
+    }
+
+# ==========================================
+# MARKETING: Forms, Gallery, Webhooks
+# ==========================================
+
+MARKETING_ROLES = [UserRole.ADMIN, UserRole.MARKETING_AGENT, UserRole.SALES_MANAGER, UserRole.CLUB_MANAGER]
+
+@api_router.post("/forms")
+async def create_form(form_data: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.MARKETING_AGENT]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    form_doc = {
+        "name": form_data.get("name", ""),
+        "headline": form_data.get("headline", ""),
+        "description": form_data.get("description", ""),
+        "platform": form_data.get("platform", "website"),
+        "webhook_url": "",
+        "questions": form_data.get("questions", []),
+        "media_ids": form_data.get("media_ids", []),
+        "active": True,
+        "created_by": str(current_user["_id"]),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.forms.insert_one(form_doc)
+    form_id = str(result.inserted_id)
+    webhook_url = f"/api/webhooks/form/{form_id}"
+    await db.forms.update_one({"_id": result.inserted_id}, {"$set": {"webhook_url": webhook_url}})
+    form_doc.pop("_id", None)
+    form_doc["id"] = form_id
+    form_doc["webhook_url"] = webhook_url
+    return form_doc
+
+@api_router.get("/forms")
+async def get_forms(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in MARKETING_ROLES:
+        raise HTTPException(status_code=403, detail="Access denied")
+    forms = await db.forms.find().sort("created_at", -1).to_list(1000)
+    result = []
+    for f in forms:
+        form_id = str(f["_id"])
+        lead_count = await db.leads.count_documents({"source_form_id": form_id})
+        apt_count = await db.appointments.count_documents({"source_form_id": form_id})
+        deal_count = await db.deals.count_documents({"source_form_id": form_id})
+        conversion = (deal_count / lead_count * 100) if lead_count > 0 else 0
+        f.pop("_id", None)
+        f["id"] = form_id
+        f["performance"] = {
+            "total_leads": lead_count,
+            "appointments": apt_count,
+            "deals": deal_count,
+            "conversion_rate": round(conversion, 1)
+        }
+        result.append(f)
+    return result
+
+@api_router.get("/forms/{form_id}")
+async def get_form(form_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in MARKETING_ROLES:
+        raise HTTPException(status_code=403, detail="Access denied")
+    form = await db.forms.find_one({"_id": ObjectId(form_id)})
+    if not form:
+        raise HTTPException(status_code=404, detail="Form not found")
+    fid = str(form["_id"])
+    form.pop("_id", None)
+    form["id"] = fid
+    lead_count = await db.leads.count_documents({"source_form_id": fid})
+    deal_count = await db.deals.count_documents({"source_form_id": fid})
+    conversion = (deal_count / lead_count * 100) if lead_count > 0 else 0
+    form["performance"] = {"total_leads": lead_count, "deals": deal_count, "conversion_rate": round(conversion, 1)}
+    return form
+
+@api_router.put("/forms/{form_id}")
+async def update_form(form_id: str, updates: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.MARKETING_AGENT]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updates.pop("_id", None)
+    updates.pop("id", None)
+    await db.forms.update_one({"_id": ObjectId(form_id)}, {"$set": updates})
+    return {"success": True}
+
+@api_router.delete("/forms/{form_id}")
+async def delete_form(form_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.MARKETING_AGENT]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    await db.forms.delete_one({"_id": ObjectId(form_id)})
+    return {"success": True}
+
+# Webhook endpoint for receiving leads from forms
+@api_router.post("/webhooks/form/{form_id}")
+async def form_webhook(form_id: str, payload: Dict[str, Any]):
+    form = await db.forms.find_one({"_id": ObjectId(form_id)})
+    if not form or not form.get("active"):
+        raise HTTPException(status_code=404, detail="Form not found or inactive")
+    
+    consultant = await get_next_consultant_for_assignment()
+    lead_doc = {
+        "name": payload.get("name", payload.get("full_name", "Unknown")),
+        "surname": payload.get("surname", payload.get("last_name", "")),
+        "email": payload.get("email", ""),
+        "phone": payload.get("phone", payload.get("phone_number", "")),
+        "source": f"{form.get('platform', 'website')} - {form.get('name', 'Form')}",
+        "source_form_id": form_id,
+        "campaign": form.get("name", ""),
+        "stage": LeadStage.NEW_LEAD,
+        "owner_id": str(consultant["_id"]) if consultant else None,
+        "tags": [],
+        "notes": "",
+        "form_answers": payload.get("answers", {}),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "last_contact": None
+    }
+    result = await db.leads.insert_one(lead_doc)
+    return {"success": True, "lead_id": str(result.inserted_id)}
+
+# Gallery / Media endpoints
+import base64
+
+MEDIA_DIR = "/app/uploads/media"
+os.makedirs(MEDIA_DIR, exist_ok=True)
+
+@api_router.post("/gallery/upload")
+async def upload_media(current_user: dict = Depends(get_current_user), file: UploadFile = File(...)):
+    allowed_roles = [UserRole.ADMIN, UserRole.MARKETING_AGENT, UserRole.SALES_MANAGER, UserRole.CLUB_MANAGER]
+    if current_user["role"] not in allowed_roles:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "bin"
+    file_id = str(ObjectId())
+    filename = f"{file_id}.{ext}"
+    filepath = os.path.join(MEDIA_DIR, filename)
+    
+    contents = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(contents)
+    
+    media_doc = {
+        "filename": filename,
+        "original_name": file.filename,
+        "content_type": file.content_type or "application/octet-stream",
+        "size": len(contents),
+        "uploaded_by": str(current_user["_id"]),
+        "uploaded_by_name": current_user["name"],
+        "url": f"/api/gallery/file/{filename}",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.media.insert_one(media_doc)
+    media_doc.pop("_id", None)
+    media_doc["id"] = str(result.inserted_id)
+    return media_doc
+
+@api_router.get("/gallery")
+async def get_gallery(current_user: dict = Depends(get_current_user)):
+    media = await db.media.find().sort("created_at", -1).to_list(1000)
+    return [
+        {
+            "id": str(m["_id"]),
+            "filename": m["filename"],
+            "original_name": m["original_name"],
+            "content_type": m.get("content_type", ""),
+            "size": m.get("size", 0),
+            "uploaded_by_name": m.get("uploaded_by_name", ""),
+            "url": m["url"],
+            "created_at": m.get("created_at", "")
+        }
+        for m in media
+    ]
+
+@api_router.delete("/gallery/{media_id}")
+async def delete_media(media_id: str, current_user: dict = Depends(get_current_user)):
+    allowed_roles = [UserRole.ADMIN, UserRole.MARKETING_AGENT, UserRole.SALES_MANAGER, UserRole.CLUB_MANAGER]
+    if current_user["role"] not in allowed_roles:
+        raise HTTPException(status_code=403, detail="Access denied")
+    media = await db.media.find_one({"_id": ObjectId(media_id)})
+    if media:
+        filepath = os.path.join(MEDIA_DIR, media["filename"])
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        await db.media.delete_one({"_id": ObjectId(media_id)})
+    return {"success": True}
+
+from fastapi.responses import FileResponse as FastAPIFileResponse
+
+@api_router.get("/gallery/file/{filename}")
+async def serve_media_file(filename: str):
+    filepath = os.path.join(MEDIA_DIR, filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FastAPIFileResponse(filepath)
+
+# Marketing Dashboard Stats
+@api_router.get("/marketing/stats")
+async def get_marketing_stats(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.MARKETING_AGENT]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    total_forms = await db.forms.count_documents({})
+    active_forms = await db.forms.count_documents({"active": True})
+    total_leads_from_forms = await db.leads.count_documents({"source_form_id": {"$exists": True, "$ne": None}})
+    total_media = await db.media.count_documents({})
+    
+    # Per-platform breakdown
+    platforms = ["facebook", "instagram", "tiktok", "website", "other"]
+    platform_stats = []
+    for p in platforms:
+        count = await db.forms.count_documents({"platform": p})
+        leads = await db.leads.count_documents({"source": {"$regex": p, "$options": "i"}})
+        if count > 0 or leads > 0:
+            platform_stats.append({"platform": p, "forms": count, "leads": leads})
+    
+    # Top forms by leads
+    forms = await db.forms.find({"active": True}).to_list(100)
+    top_forms = []
+    for f in forms:
+        fid = str(f["_id"])
+        lc = await db.leads.count_documents({"source_form_id": fid})
+        dc = await db.deals.count_documents({"source_form_id": fid})
+        top_forms.append({
+            "name": f.get("name", ""),
+            "platform": f.get("platform", ""),
+            "leads": lc,
+            "deals": dc,
+            "conversion": round((dc / lc * 100) if lc > 0 else 0, 1)
+        })
+    top_forms.sort(key=lambda x: x["leads"], reverse=True)
+    
+    return {
+        "total_forms": total_forms,
+        "active_forms": active_forms,
+        "total_leads": total_leads_from_forms,
+        "total_media": total_media,
+        "platform_stats": platform_stats,
+        "top_forms": top_forms[:10]
     }
 
 app.include_router(api_router)

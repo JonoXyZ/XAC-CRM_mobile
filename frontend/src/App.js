@@ -7,6 +7,9 @@ import Appointments from './pages/Appointments';
 import Reports from './pages/Reports';
 import Analytics from './pages/Analytics';
 import Commission from './pages/Commission';
+import MarketingDashboard from './pages/MarketingDashboard';
+import MarketingForms from './pages/MarketingForms';
+import Gallery from './pages/Gallery';
 import EmergentFixes from './pages/EmergentFixes';
 import Settings from './pages/Settings';
 import FloatingChatButton from './components/FloatingChatButton';
@@ -88,6 +91,30 @@ function App() {
           element={
             <ProtectedRoute>
               <Commission user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/marketing"
+          element={
+            <ProtectedRoute>
+              <MarketingDashboard user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/marketing/forms"
+          element={
+            <ProtectedRoute>
+              <MarketingForms user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/gallery"
+          element={
+            <ProtectedRoute>
+              <Gallery user={user} />
             </ProtectedRoute>
           }
         />

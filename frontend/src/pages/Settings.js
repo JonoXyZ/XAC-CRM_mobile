@@ -575,7 +575,7 @@ const Settings = ({ user }) => {
 
 
 
-  if (user?.role !== 'admin' && user?.role !== 'consultant' && user?.role !== 'assistant' && user?.role !== 'sales_manager' && user?.role !== 'club_manager') {
+  if (user?.role !== 'admin' && user?.role !== 'consultant' && user?.role !== 'assistant' && user?.role !== 'sales_manager' && user?.role !== 'club_manager' && user?.role !== 'marketing_agent') {
     return (
       <Layout user={user}>
         <div className="p-4 sm:p-6 lg:p-8">
@@ -1082,6 +1082,7 @@ const Settings = ({ user }) => {
                   <SelectItem value="club_manager">Club Manager</SelectItem>
                   <SelectItem value="consultant">Consultant</SelectItem>
                   <SelectItem value="assistant">Assistant</SelectItem>
+                  <SelectItem value="marketing_agent">Marketing Agent</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1171,6 +1172,7 @@ const Settings = ({ user }) => {
                       <SelectItem value="club_manager">Club Manager</SelectItem>
                       <SelectItem value="consultant">Consultant</SelectItem>
                       <SelectItem value="assistant">Assistant</SelectItem>
+                      <SelectItem value="marketing_agent">Marketing Agent</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

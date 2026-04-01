@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { Card } from '../components/ui/card';
@@ -13,6 +14,7 @@ import { toast } from 'sonner';
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Dashboard = ({ user }) => {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [settings, setSettings] = useState(null);
@@ -24,6 +26,11 @@ const Dashboard = ({ user }) => {
   const isAssistant = user?.role === 'assistant';
 
   useEffect(() => {
+    // Redirect marketing agents to their dashboard
+    if (user?.role === 'marketing_agent') {
+      navigate('/marketing');
+      return;
+    }
     if (isAssistant) {
       fetchAssistantStats();
     } else {

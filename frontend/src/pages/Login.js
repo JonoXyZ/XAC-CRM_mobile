@@ -4,7 +4,6 @@ import axios from 'axios';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from 'sonner';
 import { Barbell } from '@phosphor-icons/react';
 
@@ -13,7 +12,6 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 const Login = ({ setUser }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -24,8 +22,7 @@ const Login = ({ setUser }) => {
     try {
       const response = await axios.post(`${API_URL}/api/auth/login`, {
         email,
-        password,
-        role
+        password
       });
 
       localStorage.setItem('token', response.data.token);
@@ -97,24 +94,6 @@ const Login = ({ setUser }) => {
                 data-testid="login-password-input"
                 className="bg-zinc-950 border-zinc-800 text-zinc-50 focus:ring-2 focus:ring-lime-400 focus:border-transparent"
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="role" className="text-xs tracking-wider uppercase font-bold text-zinc-500">
-                Role
-              </Label>
-              <Select value={role} onValueChange={setRole} data-testid="login-role-select">
-                <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50 focus:ring-2 focus:ring-lime-400">
-                  <SelectValue placeholder="Select your role" />
-                </SelectTrigger>
-                <SelectContent className="bg-zinc-900 border-zinc-800">
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="sales_manager">Sales Manager</SelectItem>
-                  <SelectItem value="club_manager">Club Manager</SelectItem>
-                  <SelectItem value="consultant">Consultant</SelectItem>
-                  <SelectItem value="assistant">Assistant</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
             <Button

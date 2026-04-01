@@ -11,7 +11,9 @@ import {
   GearSix, 
   SignOut,
   Barbell,
-  CurrencyCircleDollar
+  CurrencyCircleDollar,
+  Megaphone,
+  Image
 } from '@phosphor-icons/react';
 
 const Layout = ({ children, user }) => {
@@ -24,32 +26,57 @@ const Layout = ({ children, user }) => {
     navigate('/');
   };
 
-  const menuItems = [
-    { path: '/dashboard', icon: House, label: 'Dashboard', testId: 'nav-dashboard' },
-    { path: '/leads', icon: Users, label: 'Leads', testId: 'nav-leads' },
-    { path: '/appointments', icon: Calendar, label: 'Appointments', testId: 'nav-appointments' },
-  ];
+  const menuItems = [];
 
-  if (user?.role === 'admin' || user?.role === 'sales_manager') {
+  // Marketing agents get their own set of pages
+  if (user?.role === 'marketing_agent') {
     menuItems.push(
-      { path: '/reports', icon: FileText, label: 'Reports', testId: 'nav-reports' },
-      { path: '/analytics', icon: ChartBar, label: 'Analytics', testId: 'nav-analytics' }
+      { path: '/marketing', icon: Megaphone, label: 'Marketing', testId: 'nav-marketing' },
+      { path: '/marketing/forms', icon: FileText, label: 'Forms', testId: 'nav-forms' },
+      { path: '/gallery', icon: Image, label: 'Gallery', testId: 'nav-gallery' }
     );
-  }
+  } else {
+    // Standard CRM pages for non-marketing roles
+    menuItems.push(
+      { path: '/dashboard', icon: House, label: 'Dashboard', testId: 'nav-dashboard' },
+      { path: '/leads', icon: Users, label: 'Leads', testId: 'nav-leads' },
+      { path: '/appointments', icon: Calendar, label: 'Appointments', testId: 'nav-appointments' }
+    );
 
-  // Commission visible to admin + consultants
-  if (user?.role === 'admin' || user?.role === 'consultant') {
-    menuItems.push({ path: '/commission', icon: CurrencyCircleDollar, label: 'Commission', testId: 'nav-commission' });
-  }
+    if (user?.role === 'admin' || user?.role === 'sales_manager') {
+      menuItems.push(
+        { path: '/reports', icon: FileText, label: 'Reports', testId: 'nav-reports' },
+        { path: '/analytics', icon: ChartBar, label: 'Analytics', testId: 'nav-analytics' }
+      );
+    }
 
-  if (user?.role === 'admin') {
-    menuItems.push({ 
-      path: '/emergent-fixes', 
-      icon: Robot, 
-      label: 'Emergent Fixes', 
-      testId: 'nav-emergent-fixes',
-      highlight: true 
-    });
+    // Commission visible to admin + consultants
+    if (user?.role === 'admin' || user?.role === 'consultant') {
+      menuItems.push({ path: '/commission', icon: CurrencyCircleDollar, label: 'Commission', testId: 'nav-commission' });
+    }
+
+    // Admin also gets Marketing + Gallery + Forms
+    if (user?.role === 'admin') {
+      menuItems.push(
+        { path: '/marketing', icon: Megaphone, label: 'Marketing', testId: 'nav-marketing' },
+        { path: '/marketing/forms', icon: FileText, label: 'Forms', testId: 'nav-forms' }
+      );
+    }
+
+    // Gallery for admin + managers
+    if (['admin', 'sales_manager', 'club_manager'].includes(user?.role)) {
+      menuItems.push({ path: '/gallery', icon: Image, label: 'Gallery', testId: 'nav-gallery' });
+    }
+
+    if (user?.role === 'admin') {
+      menuItems.push({ 
+        path: '/emergent-fixes', 
+        icon: Robot, 
+        label: 'Emergent Fixes', 
+        testId: 'nav-emergent-fixes',
+        highlight: true 
+      });
+    }
   }
 
   // All users can access settings (for message templates)
