@@ -641,6 +641,8 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         await db.settings.insert_one(default_settings)
         return default_settings
     
+    # Exclude MongoDB _id from response
+    settings.pop("_id", None)
     return settings
 
 @api_router.put("/settings")
@@ -776,23 +778,134 @@ async def get_audit_logs(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/whatsapp/send")
 async def send_whatsapp(message: WhatsAppMessageRequest, current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    
+    # Replace template variables
+    message_text = message.message
+    if message.lead_id:
+        lead = await db.leads.find_one({"_id": ObjectId(message.lead_id)})
+        if lead:
+            message_text = message_text.replace("{client_name}", lead["name"])
+            message_text = message_text.replace("{phone}", lead["phone"])
+    
+    message_text = message_text.replace("{consultant_name}", current_user["name"])
+    
+    # Send via WhatsApp service
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post("http://localhost:3001/send-message", json={
+                "userId": user_id,
+                "phoneNumber": message.phone_number,
+                "message": message_text
+            })
+            result = response.json()
+    except Exception as e:
+        logger.error(f"WhatsApp service error: {e}")
+        result = {"success": False, "message": str(e)}
+    
+    # Log message
     await db.message_logs.insert_one({
         "phone_number": message.phone_number,
-        "message": message.message,
+        "message": message_text,
         "lead_id": message.lead_id,
-        "sent_by": str(current_user["_id"]),
+        "sent_by": user_id,
         "sent_at": datetime.now(timezone.utc).isoformat(),
-        "status": "pending"
+        "status": "sent" if result.get("success") else "failed",
+        "error": result.get("message") if not result.get("success") else None
     })
     
-    return {"success": True, "message": "Message queued for sending"}
+    if result.get("success"):
+        return {"success": True, "message": "Message sent successfully"}
+    else:
+        raise HTTPException(status_code=500, detail=result.get("message", "Failed to send message"))
 
 @api_router.get("/whatsapp/status")
-async def whatsapp_status():
-    return {
-        "connected": False,
-        "message": "WhatsApp Web automation not configured"
-    }
+async def whatsapp_status(current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"http://localhost:3001/status/{user_id}")
+            status = response.json()
+            return status
+    except Exception as e:
+        logger.error(f"WhatsApp status check error: {e}")
+        return {"connected": False, "hasQR": False}
+
+@api_router.get("/whatsapp/status/{user_id}")
+async def whatsapp_status_by_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN and str(current_user["_id"]) != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"http://localhost:3001/status/{user_id}")
+            status = response.json()
+            return status
+    except Exception as e:
+        logger.error(f"WhatsApp status check error: {e}")
+        return {"connected": False, "hasQR": False}
+
+@api_router.post("/whatsapp/start-session")
+async def start_whatsapp_session(user_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can start WhatsApp sessions")
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post("http://localhost:3001/start-session", json={
+                "userId": user_id
+            })
+            result = response.json()
+            return result
+    except Exception as e:
+        logger.error(f"WhatsApp session start error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/whatsapp/qr/{user_id}")
+async def get_whatsapp_qr(user_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can view QR codes")
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"http://localhost:3001/qr/{user_id}")
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {"qrCode": None}
+    except Exception as e:
+        logger.error(f"WhatsApp QR fetch error: {e}")
+        return {"qrCode": None}
+
+@api_router.post("/whatsapp/logout")
+async def logout_whatsapp(user_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can logout WhatsApp sessions")
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post("http://localhost:3001/logout", json={
+                "userId": user_id
+            })
+            result = response.json()
+            return result
+    except Exception as e:
+        logger.error(f"WhatsApp logout error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/whatsapp/status-all")
+async def get_all_whatsapp_status(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can view all statuses")
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get("http://localhost:3001/status-all")
+            return response.json()
+    except Exception as e:
+        logger.error(f"WhatsApp status-all error: {e}")
+        return {}
 
 @api_router.post("/message-templates")
 async def create_message_template(template: MessageTemplateCreate, current_user: dict = Depends(get_current_user)):

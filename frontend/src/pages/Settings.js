@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import AIWritingAssistant from '../components/AIWritingAssistant';
@@ -19,7 +19,10 @@ import {
   FileText,
   UserPlus,
   Trash,
-  PencilSimple
+  PencilSimple,
+  QrCode,
+  Power,
+  ArrowsClockwise
 } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -49,6 +52,13 @@ const Settings = ({ user }) => {
     phone: '',
     active: true
   });
+  // WhatsApp session management state
+  const [waSessionStatus, setWaSessionStatus] = useState({});
+  const [waQrCode, setWaQrCode] = useState(null);
+  const [waLoading, setWaLoading] = useState(false);
+  const [waPolling, setWaPolling] = useState(false);
+  const qrPollRef = useRef(null);
+  const connectionCheckRef = useRef(null);
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -107,6 +117,123 @@ const Settings = ({ user }) => {
       console.error('Failed to check WhatsApp status');
     } finally {
       setCheckingWhatsApp(false);
+    }
+  };
+
+  // Cleanup polling on unmount or modal close
+  useEffect(() => {
+    return () => {
+      if (qrPollRef.current) clearTimeout(qrPollRef.current);
+      if (connectionCheckRef.current) clearInterval(connectionCheckRef.current);
+    };
+  }, []);
+
+  // When edit user modal opens for consultant/assistant, check their WA status
+  useEffect(() => {
+    if (showEditUserModal && selectedUser && (selectedUser.role === 'consultant' || selectedUser.role === 'assistant')) {
+      fetchUserWaStatus(selectedUser.id);
+    }
+    if (!showEditUserModal) {
+      // Cleanup when modal closes
+      setWaQrCode(null);
+      setWaLoading(false);
+      setWaPolling(false);
+      if (qrPollRef.current) clearTimeout(qrPollRef.current);
+      if (connectionCheckRef.current) clearInterval(connectionCheckRef.current);
+    }
+  }, [showEditUserModal, selectedUser]);
+
+  const fetchUserWaStatus = async (userId) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/whatsapp/status/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setWaSessionStatus(response.data);
+    } catch {
+      setWaSessionStatus({ connected: false, hasQR: false });
+    }
+  };
+
+  const handleStartWaSession = async (userId) => {
+    setWaLoading(true);
+    setWaQrCode(null);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/api/whatsapp/start-session?user_id=${userId}`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      startQRPolling(userId);
+    } catch {
+      toast.error('Failed to start WhatsApp session');
+      setWaLoading(false);
+    }
+  };
+
+  const startQRPolling = (userId) => {
+    setWaPolling(true);
+    let attempts = 0;
+    const maxAttempts = 60;
+
+    const pollQR = async () => {
+      if (attempts >= maxAttempts) {
+        setWaPolling(false);
+        setWaLoading(false);
+        toast.error('QR code generation timed out');
+        return;
+      }
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get(`${API_URL}/api/whatsapp/qr/${userId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (response.data.qrCode) {
+          setWaQrCode(response.data.qrCode);
+          setWaPolling(false);
+          setWaLoading(false);
+          startConnectionCheck(userId);
+          return;
+        }
+      } catch { /* QR not ready yet */ }
+      attempts++;
+      qrPollRef.current = setTimeout(pollQR, 1500);
+    };
+    pollQR();
+  };
+
+  const startConnectionCheck = (userId) => {
+    connectionCheckRef.current = setInterval(async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get(`${API_URL}/api/whatsapp/status/${userId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (response.data.connected) {
+          clearInterval(connectionCheckRef.current);
+          setWaQrCode(null);
+          setWaSessionStatus(response.data);
+          toast.success(`WhatsApp connected for ${selectedUser?.name}!`);
+        }
+      } catch { /* ignore */ }
+    }, 2500);
+    // Stop after 2 minutes
+    setTimeout(() => {
+      if (connectionCheckRef.current) clearInterval(connectionCheckRef.current);
+    }, 120000);
+  };
+
+  const handleDisconnectWa = async (userId) => {
+    if (!window.confirm(`Disconnect WhatsApp for ${selectedUser?.name}?`)) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/api/whatsapp/logout?user_id=${userId}`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success(`WhatsApp disconnected for ${selectedUser?.name}`);
+      setWaSessionStatus({ connected: false, hasQR: false });
+      setWaQrCode(null);
+    } catch {
+      toast.error('Failed to disconnect WhatsApp');
     }
   };
 
@@ -231,6 +358,34 @@ const Settings = ({ user }) => {
     }
   };
 
+  // Small inline component to show WA status badge on user list
+  const WhatsAppStatusBadge = ({ userId }) => {
+    const [status, setStatus] = useState(null);
+    useEffect(() => {
+      const check = async () => {
+        try {
+          const token = localStorage.getItem('token');
+          const res = await axios.get(`${API_URL}/api/whatsapp/status/${userId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setStatus(res.data.connected);
+        } catch {
+          setStatus(false);
+        }
+      };
+      check();
+    }, [userId]);
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-zinc-900 border border-zinc-800" data-testid={`wa-badge-${userId}`}>
+        <WhatsappLogo size={14} weight="duotone" className={status ? 'text-emerald-500' : 'text-zinc-600'} />
+        <span className={`text-xs font-medium ${status ? 'text-emerald-400' : 'text-zinc-500'}`}>
+          {status === null ? '...' : status ? 'WA' : 'No WA'}
+        </span>
+      </div>
+    );
+  };
+
+
   if (user?.role !== 'admin' && user?.role !== 'consultant' && user?.role !== 'assistant' && user?.role !== 'sales_manager' && user?.role !== 'club_manager') {
     return (
       <Layout user={user}>
@@ -301,30 +456,23 @@ const Settings = ({ user }) => {
                 <div className="flex-1">
                   <h3 className="text-xl font-semibold text-zinc-100">WhatsApp Web Automation</h3>
                   <p className="text-sm text-zinc-400 mt-1">
-                    Connect WhatsApp for automated lead follow-ups and messaging
+                    Individual consultant WhatsApp sessions via Baileys multi-session service
                   </p>
-                  <div className="mt-4 flex items-center gap-3">
-                    <div className={`w-3 h-3 rounded-full ${whatsappConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-                    <span className="text-sm text-zinc-300">
-                      {whatsappConnected ? 'Connected' : 'Not Connected'}
-                    </span>
-                  </div>
                 </div>
               </div>
 
               <div className="mt-6 p-4 bg-zinc-950 rounded-md border border-zinc-800">
-                <h4 className="text-sm font-bold text-zinc-300 mb-3">Setup Instructions:</h4>
+                <h4 className="text-sm font-bold text-zinc-300 mb-3">How to Activate:</h4>
                 <ol className="space-y-2 text-sm text-zinc-400">
-                  <li>1. The WhatsApp service runs on Node.js with Baileys library</li>
-                  <li>2. Start the WhatsApp service: <code className="bg-zinc-900 px-2 py-1 rounded">node whatsapp-service.js</code></li>
-                  <li>3. Scan the QR code that appears in your terminal</li>
-                  <li>4. Open WhatsApp on your phone → Settings → Linked Devices → Link a Device</li>
-                  <li>5. Once connected, automated messages will be sent through this session</li>
+                  <li>1. Go to the <strong className="text-zinc-200">User Management</strong> tab</li>
+                  <li>2. Click the edit button on a consultant/assistant's profile</li>
+                  <li>3. Scroll down to the <strong className="text-zinc-200">WhatsApp Integration</strong> section</li>
+                  <li>4. Click <strong className="text-lime-400">Activate WhatsApp</strong> and scan the QR code with their phone</li>
+                  <li>5. Once connected, messages will be sent via that consultant's session</li>
                 </ol>
-                <div className="mt-4">
-                  <p className="text-xs text-zinc-500">
-                    Note: WhatsApp service must run continuously. Consider using PM2 for production deployment.
-                  </p>
+                <div className="mt-4 p-3 bg-lime-400/10 border border-lime-400/20 rounded">
+                  <p className="text-xs text-lime-400 font-semibold">Multi-Session Architecture:</p>
+                  <p className="text-xs text-zinc-400 mt-1">Each consultant has their own WhatsApp session. Messages sent to leads are delivered from the assigned consultant's number, keeping communication personal and trackable.</p>
                 </div>
               </div>
             </Card>
@@ -441,21 +589,26 @@ const Settings = ({ user }) => {
                     className="flex items-center justify-between p-4 bg-zinc-950 rounded-md border border-zinc-800"
                     data-testid={`user-item-${u.id}`}
                   >
-                    <div>
-                      <p className="font-semibold text-zinc-100">{u.name}</p>
-                      <p className="text-sm text-zinc-400">{u.email}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded-full text-zinc-300">
-                          {u.role.replace('_', ' ')}
-                        </span>
-                        {u.active ? (
-                          <span className="text-xs text-emerald-500">Active</span>
-                        ) : (
-                          <span className="text-xs text-red-500">Inactive</span>
-                        )}
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <p className="font-semibold text-zinc-100">{u.name}</p>
+                        <p className="text-sm text-zinc-400">{u.email}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded-full text-zinc-300">
+                            {u.role.replace('_', ' ')}
+                          </span>
+                          {u.active ? (
+                            <span className="text-xs text-emerald-500">Active</span>
+                          ) : (
+                            <span className="text-xs text-red-500">Inactive</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {(u.role === 'consultant' || u.role === 'assistant') && (
+                        <WhatsAppStatusBadge userId={u.id} />
+                      )}
                       <Button
                         onClick={() => {
                           setSelectedUser(u);
@@ -765,90 +918,174 @@ const Settings = ({ user }) => {
       </Dialog>
 
       <Dialog open={showEditUserModal} onOpenChange={setShowEditUserModal}>
-        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="edit-user-modal">
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50 max-w-lg max-h-[90vh] overflow-y-auto" data-testid="edit-user-modal">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-zinc-50">Edit User</DialogTitle>
           </DialogHeader>
           {selectedUser && (
-            <form onSubmit={handleUpdateUser} className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Full Name</Label>
-                <Input
-                  value={selectedUser.name}
-                  onChange={(e) => setSelectedUser({ ...selectedUser, name: e.target.value })}
-                  required
-                  data-testid="edit-user-name-input"
-                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Email</Label>
-                <Input
-                  type="email"
-                  value={selectedUser.email}
-                  onChange={(e) => setSelectedUser({ ...selectedUser, email: e.target.value })}
-                  required
-                  data-testid="edit-user-email-input"
-                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">New Password (leave blank to keep current)</Label>
-                <Input
-                  type="password"
-                  value={selectedUser.password || ''}
-                  onChange={(e) => setSelectedUser({ ...selectedUser, password: e.target.value })}
-                  data-testid="edit-user-password-input"
-                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
-                  placeholder="Enter new password..."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Phone</Label>
-                <Input
-                  value={selectedUser.phone || ''}
-                  onChange={(e) => setSelectedUser({ ...selectedUser, phone: e.target.value })}
-                  data-testid="edit-user-phone-input"
-                  className="bg-zinc-950 border-zinc-800 text-zinc-50"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Role</Label>
-                <Select
-                  value={selectedUser.role}
-                  onValueChange={(value) => setSelectedUser({ ...selectedUser, role: value })}
-                  data-testid="edit-user-role-select"
-                >
-                  <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="sales_manager">Sales Manager</SelectItem>
-                    <SelectItem value="club_manager">Club Manager</SelectItem>
-                    <SelectItem value="consultant">Consultant</SelectItem>
-                    <SelectItem value="assistant">Assistant</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex gap-3">
-                <Button
-                  type="button"
-                  onClick={() => setShowEditUserModal(false)}
-                  data-testid="cancel-edit-user-button"
-                  className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  data-testid="submit-edit-user-button"
-                  className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
-                >
-                  Update User
-                </Button>
-              </div>
-            </form>
+            <div className="space-y-6">
+              <form onSubmit={handleUpdateUser} className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Full Name</Label>
+                  <Input
+                    value={selectedUser.name}
+                    onChange={(e) => setSelectedUser({ ...selectedUser, name: e.target.value })}
+                    required
+                    data-testid="edit-user-name-input"
+                    className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Email</Label>
+                  <Input
+                    type="email"
+                    value={selectedUser.email}
+                    onChange={(e) => setSelectedUser({ ...selectedUser, email: e.target.value })}
+                    required
+                    data-testid="edit-user-email-input"
+                    className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">New Password (leave blank to keep current)</Label>
+                  <Input
+                    type="password"
+                    value={selectedUser.password || ''}
+                    onChange={(e) => setSelectedUser({ ...selectedUser, password: e.target.value })}
+                    data-testid="edit-user-password-input"
+                    className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                    placeholder="Enter new password..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Phone</Label>
+                  <Input
+                    value={selectedUser.phone || ''}
+                    onChange={(e) => setSelectedUser({ ...selectedUser, phone: e.target.value })}
+                    data-testid="edit-user-phone-input"
+                    className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Role</Label>
+                  <Select
+                    value={selectedUser.role}
+                    onValueChange={(value) => setSelectedUser({ ...selectedUser, role: value })}
+                    data-testid="edit-user-role-select"
+                  >
+                    <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800">
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="sales_manager">Sales Manager</SelectItem>
+                      <SelectItem value="club_manager">Club Manager</SelectItem>
+                      <SelectItem value="consultant">Consultant</SelectItem>
+                      <SelectItem value="assistant">Assistant</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    onClick={() => setShowEditUserModal(false)}
+                    data-testid="cancel-edit-user-button"
+                    className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    data-testid="submit-edit-user-button"
+                    className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+                  >
+                    Update User
+                  </Button>
+                </div>
+              </form>
+
+              {/* WhatsApp Integration Section - only for consultants/assistants */}
+              {(selectedUser.role === 'consultant' || selectedUser.role === 'assistant') && (
+                <div className="border-t border-zinc-800 pt-5" data-testid="wa-integration-section">
+                  <div className="flex items-center gap-3 mb-4">
+                    <WhatsappLogo size={28} weight="duotone" className="text-lime-400" />
+                    <div>
+                      <h4 className="text-base font-bold text-zinc-100">WhatsApp Integration</h4>
+                      <p className="text-xs text-zinc-500">Link {selectedUser.name}'s WhatsApp for CRM messaging</p>
+                    </div>
+                  </div>
+
+                  {/* Status display */}
+                  <div className="flex items-center gap-3 mb-4 p-3 bg-zinc-950 rounded-md border border-zinc-800">
+                    <div className={`w-3 h-3 rounded-full ${waSessionStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`}></div>
+                    <span className="text-sm text-zinc-300">
+                      {waSessionStatus.connected ? 'Connected & Active' : 'Not Connected'}
+                    </span>
+                    <Button
+                      onClick={() => fetchUserWaStatus(selectedUser.id)}
+                      data-testid="wa-refresh-status"
+                      className="ml-auto p-1.5 bg-zinc-800 hover:bg-zinc-700"
+                      title="Refresh status"
+                    >
+                      <ArrowsClockwise size={16} />
+                    </Button>
+                  </div>
+
+                  {/* If connected - show disconnect */}
+                  {waSessionStatus.connected ? (
+                    <Button
+                      onClick={() => handleDisconnectWa(selectedUser.id)}
+                      data-testid="wa-disconnect-button"
+                      className="w-full bg-red-900/50 border border-red-800 text-red-200 hover:bg-red-900 flex items-center justify-center gap-2"
+                    >
+                      <Power size={18} />
+                      Disconnect WhatsApp
+                    </Button>
+                  ) : (
+                    <>
+                      {/* QR code display or setup button */}
+                      {waQrCode ? (
+                        <div className="space-y-3">
+                          <div className="p-3 bg-lime-400/10 border border-lime-400/20 rounded-lg">
+                            <ol className="text-xs text-zinc-300 space-y-1">
+                              <li><span className="font-bold text-lime-400">1.</span> Open WhatsApp on <strong>{selectedUser.name}'s phone</strong></li>
+                              <li><span className="font-bold text-lime-400">2.</span> Go to <strong>Settings &rarr; Linked Devices</strong></li>
+                              <li><span className="font-bold text-lime-400">3.</span> Tap <strong>Link a Device</strong></li>
+                              <li><span className="font-bold text-lime-400">4.</span> Scan the QR code below</li>
+                            </ol>
+                          </div>
+                          <div className="flex justify-center">
+                            <div className="bg-white p-3 rounded-lg">
+                              <img src={waQrCode} alt="WhatsApp QR Code" className="w-52 h-52" data-testid="wa-qr-image" />
+                            </div>
+                          </div>
+                          <p className="text-xs text-zinc-500 text-center">Waiting for scan... This may take a few seconds.</p>
+                        </div>
+                      ) : (
+                        <Button
+                          onClick={() => handleStartWaSession(selectedUser.id)}
+                          disabled={waLoading || waPolling}
+                          data-testid="wa-activate-button"
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2"
+                        >
+                          {waLoading || waPolling ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                              Generating QR Code...
+                            </>
+                          ) : (
+                            <>
+                              <QrCode size={20} weight="bold" />
+                              Activate WhatsApp
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </DialogContent>
       </Dialog>

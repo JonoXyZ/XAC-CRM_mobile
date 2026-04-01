@@ -9,7 +9,7 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Phone, Envelope, Tag, PencilSimple, CalendarPlus, SquaresFour, Table, Star } from '@phosphor-icons/react';
+import { Plus, Phone, Envelope, Tag, PencilSimple, CalendarPlus, SquaresFour, Table, Star, WhatsappLogo } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -60,11 +60,27 @@ const Leads = ({ user }) => {
   });
   const [leadScore, setLeadScore] = useState(0);
   const [showScoreModal, setShowScoreModal] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [messageTemplates, setMessageTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [whatsappMessage, setWhatsappMessage] = useState('');
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
 
   useEffect(() => {
     fetchLeads();
     fetchUsers();
+    fetchMessageTemplates();
   }, []);
+
+  const fetchMessageTemplates = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/message-templates`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMessageTemplates(response.data);
+    } catch { /* ignore */ }
+  };
 
   const fetchLeads = async () => {
     try {
@@ -173,6 +189,50 @@ const Leads = ({ user }) => {
       fetchLeads();
     } catch (error) {
       toast.error('Failed to update score');
+    }
+  };
+
+  const openWhatsAppModal = (lead) => {
+    setSelectedLead(lead);
+    setWhatsappMessage('');
+    setSelectedTemplateId('');
+    setShowWhatsAppModal(true);
+  };
+
+  const handleTemplateSelect = (templateId) => {
+    setSelectedTemplateId(templateId);
+    const template = messageTemplates.find(t => t.id === templateId);
+    if (template) {
+      let msg = template.content;
+      if (selectedLead) {
+        msg = msg.replace(/{client_name}/g, selectedLead.name || '');
+        msg = msg.replace(/{phone}/g, selectedLead.phone || '');
+        msg = msg.replace(/{consultant_name}/g, user?.name || '');
+      }
+      setWhatsappMessage(msg);
+    }
+  };
+
+  const handleSendWhatsApp = async (e) => {
+    e.preventDefault();
+    if (!whatsappMessage.trim() || !selectedLead?.phone) return;
+    setSendingWhatsApp(true);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/api/whatsapp/send`, {
+        phone_number: selectedLead.phone,
+        message: whatsappMessage,
+        lead_id: selectedLead.id,
+        template_id: selectedTemplateId || null
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('WhatsApp message sent!');
+      setShowWhatsAppModal(false);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to send WhatsApp message');
+    } finally {
+      setSendingWhatsApp(false);
     }
   };
 
@@ -392,18 +452,31 @@ const Leads = ({ user }) => {
                                     </div>
                                   )}
                                 </div>
-                                <Button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedLead(lead);
-                                    setShowAppointmentModal(true);
-                                  }}
-                                  data-testid={`book-appointment-${lead.id}`}
-                                  className="w-full mt-3 bg-cyan-500 text-zinc-950 font-bold hover:bg-cyan-600 flex items-center justify-center gap-2"
-                                >
-                                  <CalendarPlus size={16} weight="bold" />
-                                  Book Appointment
-                                </Button>
+                                <div className="flex gap-2 mt-3">
+                                  <Button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openWhatsAppModal(lead);
+                                    }}
+                                    data-testid={`whatsapp-lead-${lead.id}`}
+                                    className="flex-1 bg-emerald-600 text-white font-bold hover:bg-emerald-700 flex items-center justify-center gap-1"
+                                  >
+                                    <WhatsappLogo size={16} weight="bold" />
+                                    WhatsApp
+                                  </Button>
+                                  <Button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedLead(lead);
+                                      setShowAppointmentModal(true);
+                                    }}
+                                    data-testid={`book-appointment-${lead.id}`}
+                                    className="flex-1 bg-cyan-500 text-zinc-950 font-bold hover:bg-cyan-600 flex items-center justify-center gap-1"
+                                  >
+                                    <CalendarPlus size={16} weight="bold" />
+                                    Book
+                                  </Button>
+                                </div>
                               </div>
                             )}
                           </Draggable>
@@ -469,6 +542,14 @@ const Leads = ({ user }) => {
                     </td>
                     <td className="p-4">
                       <div className="flex gap-2">
+                        <Button
+                          onClick={() => openWhatsAppModal(lead)}
+                          data-testid={`table-whatsapp-${lead.id}`}
+                          className="p-2 bg-emerald-600 hover:bg-emerald-700"
+                          title="Send WhatsApp"
+                        >
+                          <WhatsappLogo size={16} weight="bold" />
+                        </Button>
                         <Button
                           onClick={() => {
                             setSelectedLead(lead);
@@ -927,6 +1008,85 @@ const Leads = ({ user }) => {
                   className="flex-1 bg-amber-500 text-zinc-950 font-bold hover:bg-amber-600"
                 >
                   Update Score
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* WhatsApp Send Modal */}
+      <Dialog open={showWhatsAppModal} onOpenChange={setShowWhatsAppModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="whatsapp-send-modal">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-zinc-50 flex items-center gap-2">
+              <WhatsappLogo size={28} weight="duotone" className="text-emerald-500" />
+              Send WhatsApp
+            </DialogTitle>
+          </DialogHeader>
+          {selectedLead && (
+            <form onSubmit={handleSendWhatsApp} className="space-y-4">
+              <div className="p-3 bg-zinc-950 rounded-md border border-zinc-800">
+                <p className="text-sm text-zinc-400">To:</p>
+                <p className="font-semibold text-zinc-100">
+                  {selectedLead.name} {selectedLead.surname || ''} — {selectedLead.phone}
+                </p>
+              </div>
+
+              {messageTemplates.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Use Template (optional)</Label>
+                  <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
+                    <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50" data-testid="wa-template-select">
+                      <SelectValue placeholder="Select a template..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800">
+                      {messageTemplates.map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Message</Label>
+                <textarea
+                  value={whatsappMessage}
+                  onChange={(e) => setWhatsappMessage(e.target.value)}
+                  required
+                  data-testid="wa-message-input"
+                  className="w-full min-h-[120px] bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-50"
+                  placeholder="Type your message..."
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  onClick={() => setShowWhatsAppModal(false)}
+                  data-testid="cancel-whatsapp-button"
+                  className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={sendingWhatsApp || !whatsappMessage.trim()}
+                  data-testid="submit-whatsapp-button"
+                  className="flex-1 bg-emerald-600 text-white font-bold hover:bg-emerald-700 flex items-center justify-center gap-2"
+                >
+                  {sendingWhatsApp ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <WhatsappLogo size={18} weight="bold" />
+                      Send Message
+                    </>
+                  )}
                 </Button>
               </div>
             </form>
