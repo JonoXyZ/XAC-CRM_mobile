@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import axios from 'axios';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Leads from './pages/Leads';
@@ -16,8 +17,16 @@ import FloatingChatButton from './components/FloatingChatButton';
 import { Toaster } from './components/ui/sonner';
 import './App.css';
 
+const API_URL = process.env.REACT_APP_BACKEND_URL;
+
+export const BrandingContext = React.createContext({
+  companyName: 'Revival Fitness',
+  appName: 'XAC CRM'
+});
+
 function App() {
   const [user, setUser] = React.useState(null);
+  const [branding, setBranding] = React.useState({ companyName: 'Revival Fitness', appName: 'XAC CRM' });
 
   React.useEffect(() => {
     const token = localStorage.getItem('token');
@@ -25,6 +34,19 @@ function App() {
     if (token && userData) {
       setUser(JSON.parse(userData));
     }
+    // Load branding from settings
+    const loadBranding = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/api/branding`);
+        if (res.data) {
+          setBranding({
+            companyName: res.data.company_name || 'Revival Fitness',
+            appName: res.data.app_name || 'XAC CRM'
+          });
+        }
+      } catch { /* use defaults */ }
+    };
+    loadBranding();
   }, []);
 
   const ProtectedRoute = ({ children }) => {
@@ -33,6 +55,7 @@ function App() {
   };
 
   return (
+    <BrandingContext.Provider value={branding}>
     <Router>
       <Toaster position="top-right" richColors />
       <FloatingChatButton user={user} type="emergent" />
@@ -128,6 +151,7 @@ function App() {
         />
       </Routes>
     </Router>
+    </BrandingContext.Provider>
   );
 }
 

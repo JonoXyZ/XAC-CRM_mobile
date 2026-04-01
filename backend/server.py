@@ -218,6 +218,15 @@ async def get_next_consultant_for_assignment():
     lead_counts.sort(key=lambda x: x["count"])
     return lead_counts[0]["consultant"] if lead_counts else None
 
+
+@api_router.get("/branding")
+async def get_branding():
+    settings = await db.settings.find_one({"key": "system_settings"})
+    return {
+        "company_name": settings.get("company_name", "Revival Fitness") if settings else "Revival Fitness",
+        "app_name": settings.get("app_name", "XAC CRM") if settings else "XAC CRM"
+    }
+
 @api_router.post("/auth/login")
 async def login(login_data: LoginRequest):
     user = await db.users.find_one({"email": login_data.email})

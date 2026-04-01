@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { BrandingContext } from '../App';
 import { Button } from './ui/button';
 import { 
   House, 
@@ -17,6 +18,7 @@ import {
 } from '@phosphor-icons/react';
 
 const Layout = ({ children, user }) => {
+  const { companyName } = useContext(BrandingContext);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -93,7 +95,7 @@ const Layout = ({ children, user }) => {
             <Barbell size={32} weight="duotone" className="text-lime-400" />
             <div>
               <h2 className="text-lg font-black text-zinc-50">XAC CRM</h2>
-              <p className="text-xs text-zinc-500">Revival Fitness</p>
+              <p className="text-xs text-zinc-500">{companyName}</p>
             </div>
           </div>
         </div>

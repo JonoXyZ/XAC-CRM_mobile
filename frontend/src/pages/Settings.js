@@ -413,9 +413,6 @@ const Settings = ({ user }) => {
     const setCashTiers = (tiers) => updateES({ cash_sales_tiers: tiers });
     const setBonuses = (b) => updateES({ bonuses: b });
 
-    // Auto-select content on focus for quick editing
-    const selectOnFocus = (e) => e.target.select();
-
     return (
       <div className="border-t border-zinc-800 pt-5 space-y-4" data-testid="earnings-scale-section">
         <h4 className="text-base font-bold text-zinc-100 flex items-center gap-2">
@@ -424,174 +421,156 @@ const Settings = ({ user }) => {
         </h4>
 
         {/* Basic Salary */}
-        <div className="flex items-center gap-3 p-3 bg-zinc-950 rounded-md border border-zinc-800">
-          <span className="text-sm font-semibold text-zinc-300 w-32">Basic Salary</span>
-          <div className="flex items-center gap-1 flex-1">
-            <span className="text-sm text-zinc-500">R</span>
-            <input
-              type="number"
-              value={es.basic_salary || ''}
-              onChange={(e) => updateES({ basic_salary: parseFloat(e.target.value) || 0 })}
-              onFocus={selectOnFocus}
-              placeholder="0"
-              data-testid="basic-salary-input"
-              className="w-full bg-transparent border-b border-zinc-700 focus:border-lime-400 outline-none text-zinc-50 text-sm py-1 px-1 transition-colors"
-            />
-          </div>
+        <div className="space-y-1">
+          <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Basic Salary (R)</Label>
+          <Input
+            type="number"
+            value={es.basic_salary || ''}
+            onChange={(e) => updateES({ basic_salary: parseFloat(e.target.value) || 0 })}
+            placeholder="0"
+            data-testid="basic-salary-input"
+            className="bg-zinc-950 border-zinc-800 text-zinc-50"
+          />
         </div>
 
-        {/* Debit Order Tiers - Table layout */}
-        <div className="p-3 bg-zinc-950 rounded-md border border-zinc-800">
-          <p className="text-xs tracking-wider uppercase font-bold text-zinc-500 mb-2">Debit Orders Commission (R per unit)</p>
-          <div className="space-y-1">
-            {debitTiers.map((tier, idx) => (
-              <div key={idx} className="flex items-center gap-2 py-1">
-                <span className="text-xs text-zinc-400 w-24 shrink-0">{tier.min_units}{tier.max_units < 999 ? `-${tier.max_units}` : '+'} units</span>
-                <span className="text-xs text-zinc-500">R</span>
-                <input
-                  type="number"
-                  value={tier.rate || ''}
-                  onChange={(e) => {
-                    const updated = [...debitTiers];
-                    updated[idx] = { ...tier, rate: parseFloat(e.target.value) || 0 };
-                    setDebitTiers(updated);
-                  }}
-                  onFocus={selectOnFocus}
-                  placeholder="0"
-                  data-testid={`debit-tier-${idx}-rate`}
-                  className="flex-1 bg-transparent border-b border-zinc-700 focus:border-lime-400 outline-none text-zinc-50 text-sm py-1 px-1 transition-colors"
-                />
-                {idx >= 4 && (
-                  <button onClick={() => setDebitTiers(debitTiers.filter((_, i) => i !== idx))} className="p-1 text-red-400 hover:text-red-300">
-                    <Trash size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          <button
+        {/* Debit Order Tiers */}
+        <div className="space-y-2">
+          <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Debit Orders Commission (R per unit)</Label>
+          {debitTiers.map((tier, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <span className="text-xs text-zinc-400 w-24 shrink-0">{tier.min_units}{tier.max_units < 999 ? `-${tier.max_units}` : '+'} units</span>
+              <Input
+                type="number"
+                value={tier.rate || ''}
+                onChange={(e) => {
+                  const updated = [...debitTiers];
+                  updated[idx] = { ...tier, rate: parseFloat(e.target.value) || 0 };
+                  setDebitTiers(updated);
+                }}
+                placeholder="0"
+                data-testid={`debit-tier-${idx}-rate`}
+                className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
+              />
+              {idx >= 4 && (
+                <Button type="button" onClick={() => setDebitTiers(debitTiers.filter((_, i) => i !== idx))} className="p-1 bg-red-900 hover:bg-red-800 text-red-100">
+                  <Trash size={14} />
+                </Button>
+              )}
+            </div>
+          ))}
+          <Button
+            type="button"
             onClick={() => {
               const lastMax = debitTiers[debitTiers.length - 1]?.min_units || 30;
               setDebitTiers([...debitTiers, { min_units: lastMax + 1, max_units: 999, rate: 0 }]);
             }}
             data-testid="add-debit-tier-button"
-            className="mt-2 text-xs text-lime-400 hover:text-lime-300 font-semibold"
+            className="text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
           >
             + Add Tier
-          </button>
+          </Button>
         </div>
 
-        {/* Cash Sales Tiers - Table layout */}
-        <div className="p-3 bg-zinc-950 rounded-md border border-zinc-800">
-          <p className="text-xs tracking-wider uppercase font-bold text-zinc-500 mb-2">Cash Sales Commission (%)</p>
-          <div className="space-y-1">
-            {cashTiers.map((tier, idx) => (
-              <div key={idx} className="flex items-center gap-2 py-1">
-                <span className="text-xs text-zinc-400 w-24 shrink-0">R{tier.min_value.toLocaleString()}+</span>
-                <input
-                  type="number"
-                  value={tier.percentage || ''}
-                  onChange={(e) => {
-                    const updated = [...cashTiers];
-                    updated[idx] = { ...tier, percentage: parseFloat(e.target.value) || 0 };
-                    setCashTiers(updated);
-                  }}
-                  onFocus={selectOnFocus}
-                  placeholder="0"
-                  data-testid={`cash-tier-${idx}-pct`}
-                  className="flex-1 bg-transparent border-b border-zinc-700 focus:border-lime-400 outline-none text-zinc-50 text-sm py-1 px-1 transition-colors"
-                />
-                <span className="text-xs text-zinc-500">%</span>
-                {idx >= 5 && (
-                  <button onClick={() => setCashTiers(cashTiers.filter((_, i) => i !== idx))} className="p-1 text-red-400 hover:text-red-300">
-                    <Trash size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          <button
+        {/* Cash Sales Tiers */}
+        <div className="space-y-2">
+          <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Cash Sales Commission (%)</Label>
+          {cashTiers.map((tier, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <span className="text-xs text-zinc-400 w-24 shrink-0">R{tier.min_value.toLocaleString()}+</span>
+              <Input
+                type="number"
+                value={tier.percentage || ''}
+                onChange={(e) => {
+                  const updated = [...cashTiers];
+                  updated[idx] = { ...tier, percentage: parseFloat(e.target.value) || 0 };
+                  setCashTiers(updated);
+                }}
+                placeholder="0"
+                data-testid={`cash-tier-${idx}-pct`}
+                className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
+              />
+              {idx >= 5 && (
+                <Button type="button" onClick={() => setCashTiers(cashTiers.filter((_, i) => i !== idx))} className="p-1 bg-red-900 hover:bg-red-800 text-red-100">
+                  <Trash size={14} />
+                </Button>
+              )}
+            </div>
+          ))}
+          <Button
+            type="button"
             onClick={() => {
               const lastMin = cashTiers[cashTiers.length - 1]?.min_value || 100000;
               setCashTiers([...cashTiers, { min_value: lastMin + 25000, percentage: 0 }]);
             }}
             data-testid="add-cash-tier-button"
-            className="mt-2 text-xs text-lime-400 hover:text-lime-300 font-semibold"
+            className="text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
           >
             + Add Tier
-          </button>
+          </Button>
         </div>
 
-        {/* Bonuses - Compact */}
-        <div className="p-3 bg-zinc-950 rounded-md border border-zinc-800">
-          <p className="text-xs tracking-wider uppercase font-bold text-zinc-500 mb-2">Bonuses & Incentives</p>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 py-1">
-              <span className="text-xs text-zinc-400 w-24 shrink-0">Club Incentive</span>
-              <span className="text-xs text-zinc-500">R</span>
-              <input
-                type="number"
-                value={bonuses.club_incentive || ''}
-                onChange={(e) => setBonuses({ ...bonuses, club_incentive: parseFloat(e.target.value) || 0 })}
-                onFocus={selectOnFocus}
-                placeholder="0"
-                data-testid="club-incentive-input"
-                className="flex-1 bg-transparent border-b border-zinc-700 focus:border-lime-400 outline-none text-zinc-50 text-sm py-1 px-1 transition-colors"
-              />
-            </div>
-            {(bonuses.incentives || []).map((inc, idx) => (
-              <div key={idx} className="flex items-center gap-2 py-1">
-                <input
-                  value={inc.name || ''}
-                  onChange={(e) => {
-                    const updated = [...bonuses.incentives];
-                    updated[idx] = { ...inc, name: e.target.value };
-                    setBonuses({ ...bonuses, incentives: updated });
-                  }}
-                  onFocus={selectOnFocus}
-                  placeholder="Name"
-                  className="w-24 bg-transparent border-b border-zinc-700 focus:border-lime-400 outline-none text-zinc-300 text-xs py-1 px-1 transition-colors"
-                />
-                <span className="text-xs text-zinc-500">R</span>
-                <input
-                  type="number"
-                  value={inc.value || ''}
-                  onChange={(e) => {
-                    const updated = [...bonuses.incentives];
-                    updated[idx] = { ...inc, value: parseFloat(e.target.value) || 0 };
-                    setBonuses({ ...bonuses, incentives: updated });
-                  }}
-                  onFocus={selectOnFocus}
-                  placeholder="0"
-                  data-testid={`incentive-${idx}-value`}
-                  className="flex-1 bg-transparent border-b border-zinc-700 focus:border-lime-400 outline-none text-zinc-50 text-sm py-1 px-1 transition-colors"
-                />
-                <button onClick={() => setBonuses({ ...bonuses, incentives: bonuses.incentives.filter((_, i) => i !== idx) })} className="p-1 text-red-400 hover:text-red-300">
-                  <Trash size={14} />
-                </button>
-              </div>
-            ))}
-            <div className="flex items-center gap-2 py-1">
-              <span className="text-xs text-zinc-400 w-24 shrink-0">Special Bonus</span>
-              <span className="text-xs text-zinc-500">R</span>
-              <input
-                type="number"
-                value={bonuses.special_bonus || ''}
-                onChange={(e) => setBonuses({ ...bonuses, special_bonus: parseFloat(e.target.value) || 0 })}
-                onFocus={selectOnFocus}
-                placeholder="0"
-                data-testid="special-bonus-input"
-                className="flex-1 bg-transparent border-b border-zinc-700 focus:border-lime-400 outline-none text-zinc-50 text-sm py-1 px-1 transition-colors"
-              />
-            </div>
+        {/* Bonuses */}
+        <div className="space-y-2">
+          <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Bonuses & Incentives</Label>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-400 w-24 shrink-0">Club Incentive</span>
+            <Input
+              type="number"
+              value={bonuses.club_incentive || ''}
+              onChange={(e) => setBonuses({ ...bonuses, club_incentive: parseFloat(e.target.value) || 0 })}
+              placeholder="0"
+              data-testid="club-incentive-input"
+              className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
+            />
           </div>
-          <button
+          {(bonuses.incentives || []).map((inc, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <Input
+                value={inc.name || ''}
+                onChange={(e) => {
+                  const updated = [...bonuses.incentives];
+                  updated[idx] = { ...inc, name: e.target.value };
+                  setBonuses({ ...bonuses, incentives: updated });
+                }}
+                placeholder="Name"
+                className="bg-zinc-950 border-zinc-800 text-zinc-50 w-24"
+              />
+              <Input
+                type="number"
+                value={inc.value || ''}
+                onChange={(e) => {
+                  const updated = [...bonuses.incentives];
+                  updated[idx] = { ...inc, value: parseFloat(e.target.value) || 0 };
+                  setBonuses({ ...bonuses, incentives: updated });
+                }}
+                placeholder="0"
+                data-testid={`incentive-${idx}-value`}
+                className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
+              />
+              <Button type="button" onClick={() => setBonuses({ ...bonuses, incentives: bonuses.incentives.filter((_, i) => i !== idx) })} className="p-1 bg-red-900 hover:bg-red-800 text-red-100">
+                <Trash size={14} />
+              </Button>
+            </div>
+          ))}
+          <Button
+            type="button"
             onClick={() => setBonuses({ ...bonuses, incentives: [...(bonuses.incentives || []), { name: 'Incentive', value: 0 }] })}
             data-testid="add-incentive-button"
-            className="mt-2 text-xs text-lime-400 hover:text-lime-300 font-semibold"
+            className="text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
           >
             + Add Incentive
-          </button>
+          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-400 w-24 shrink-0">Special Bonus</span>
+            <Input
+              type="number"
+              value={bonuses.special_bonus || ''}
+              onChange={(e) => setBonuses({ ...bonuses, special_bonus: parseFloat(e.target.value) || 0 })}
+              placeholder="0"
+              data-testid="special-bonus-input"
+              className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
+            />
+          </div>
         </div>
       </div>
     );
@@ -1001,6 +980,22 @@ const Settings = ({ user }) => {
             <Card className="stat-card p-6" data-testid="branding-settings-card">
               <h3 className="text-2xl font-bold text-zinc-100 mb-4">Brand Settings</h3>
               <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">
+                    Company Name
+                  </Label>
+                  <Input
+                    value={settings?.company_name || ''}
+                    onChange={(e) => handleUpdateSettings({ company_name: e.target.value })}
+                    data-testid="company-name-input"
+                    className="bg-zinc-950 border-zinc-800 text-zinc-50"
+                    placeholder="Revival Fitness"
+                  />
+                  <p className="text-xs text-zinc-500">
+                    This name appears on the login screen, sidebar, and PDF exports
+                  </p>
+                </div>
+
                 <div className="space-y-2">
                   <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">
                     Logo URL

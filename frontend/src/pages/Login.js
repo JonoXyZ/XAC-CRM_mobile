@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Button } from '../components/ui/button';
@@ -6,10 +6,12 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 import { Barbell } from '@phosphor-icons/react';
+import { BrandingContext } from '../App';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Login = ({ setUser }) => {
+  const { companyName, appName } = useContext(BrandingContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -58,9 +60,9 @@ const Login = ({ setUser }) => {
               <Barbell size={48} weight="duotone" className="text-lime-400" />
             </div>
             <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-zinc-50" data-testid="login-title">
-              XAC CRM
+              {appName}
             </h1>
-            <p className="mt-2 text-base text-zinc-400">Revival Fitness Lead Management</p>
+            <p className="mt-2 text-base text-zinc-400">{companyName} Lead Management</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6" data-testid="login-form">

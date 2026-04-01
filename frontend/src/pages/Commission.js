@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { Card } from '../components/ui/card';
@@ -8,12 +8,14 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from 'sonner';
 import { CurrencyCircleDollar, TrendUp, Target, ArrowDown, FilePdf, Check } from '@phosphor-icons/react';
+import { BrandingContext } from '../App';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Commission = ({ user }) => {
+  const { companyName } = useContext(BrandingContext);
   const [commission, setCommission] = useState(null);
   const [loading, setLoading] = useState(true);
   const [goalInput, setGoalInput] = useState('');
@@ -111,7 +113,7 @@ const Commission = ({ user }) => {
     if (!commission) return;
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
-    const companyName = 'Revival Fitness';
+    const companyLabel = companyName;
     const monthLabel = commission.month_start && commission.month_end
       ? `${commission.month_start} to ${commission.month_end}`
       : 'Current Month';
@@ -119,7 +121,7 @@ const Commission = ({ user }) => {
     // --- Page 1: Debit Orders ---
     doc.setFontSize(10);
     doc.text(monthLabel, 14, 15);
-    doc.text(companyName, pageWidth / 2, 15, { align: 'center' });
+    doc.text(companyLabel, pageWidth / 2, 15, { align: 'center' });
     doc.text(commission.consultant_name, pageWidth - 14, 15, { align: 'right' });
 
     doc.setFontSize(16);
@@ -169,7 +171,7 @@ const Commission = ({ user }) => {
     doc.addPage();
     doc.setFontSize(10);
     doc.text(monthLabel, 14, 15);
-    doc.text(companyName, pageWidth / 2, 15, { align: 'center' });
+    doc.text(companyLabel, pageWidth / 2, 15, { align: 'center' });
     doc.text(commission.consultant_name, pageWidth - 14, 15, { align: 'right' });
 
     doc.setFontSize(16);
