@@ -28,6 +28,219 @@ import {
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
+
+// Extracted outside Settings to prevent re-mount on parent state change
+const EarningsScaleEditor = ({ selectedUser: su, setSelectedUser: setSU }) => {
+  const es = su.earnings_scale || {};
+  const updateES = (patch) => setSU({ ...su, earnings_scale: { ...es, ...patch } });
+
+  const debitTiers = es.debit_order_tiers || [
+    { min_units: 1, max_units: 10, rate: 0 },
+    { min_units: 11, max_units: 19, rate: 0 },
+    { min_units: 20, max_units: 29, rate: 0 },
+    { min_units: 31, max_units: 999, rate: 0 }
+  ];
+  const cashTiers = es.cash_sales_tiers || [
+    { min_value: 1, percentage: 0 },
+    { min_value: 30000, percentage: 0 },
+    { min_value: 50000, percentage: 0 },
+    { min_value: 75000, percentage: 0 },
+    { min_value: 100000, percentage: 0 }
+  ];
+  const bonuses = es.bonuses || { club_incentive: 0, incentives: [], special_bonus: 0 };
+
+  const setDebitTiers = (tiers) => updateES({ debit_order_tiers: tiers });
+  const setCashTiers = (tiers) => updateES({ cash_sales_tiers: tiers });
+  const setBonuses = (b) => updateES({ bonuses: b });
+
+  return (
+    <div className="border-t border-zinc-800 pt-5 space-y-4" data-testid="earnings-scale-section">
+      <h4 className="text-base font-bold text-zinc-100 flex items-center gap-2">
+        <CurrencyCircleDollar size={24} weight="duotone" className="text-amber-500" />
+        Earnings Scale
+      </h4>
+
+      <div className="space-y-1">
+        <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Basic Salary (R)</Label>
+        <Input
+          type="number"
+          value={es.basic_salary || ''}
+          onChange={(e) => updateES({ basic_salary: parseFloat(e.target.value) || 0 })}
+          placeholder="0"
+          data-testid="basic-salary-input"
+          className="bg-zinc-950 border-zinc-800 text-zinc-50"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Debit Orders Commission (R per unit)</Label>
+        {debitTiers.map((tier, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <span className="text-xs text-zinc-400 w-24 shrink-0">{tier.min_units}{tier.max_units < 999 ? `-${tier.max_units}` : '+'} units</span>
+            <Input
+              type="number"
+              value={tier.rate || ''}
+              onChange={(e) => {
+                const updated = [...debitTiers];
+                updated[idx] = { ...tier, rate: parseFloat(e.target.value) || 0 };
+                setDebitTiers(updated);
+              }}
+              placeholder="0"
+              data-testid={`debit-tier-${idx}-rate`}
+              className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
+            />
+            {idx >= 4 && (
+              <Button type="button" onClick={() => setDebitTiers(debitTiers.filter((_, i) => i !== idx))} className="p-1 bg-red-900 hover:bg-red-800 text-red-100">
+                <Trash size={14} />
+              </Button>
+            )}
+          </div>
+        ))}
+        <Button
+          type="button"
+          onClick={() => {
+            const lastMax = debitTiers[debitTiers.length - 1]?.min_units || 30;
+            setDebitTiers([...debitTiers, { min_units: lastMax + 1, max_units: 999, rate: 0 }]);
+          }}
+          data-testid="add-debit-tier-button"
+          className="text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+        >
+          + Add Tier
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Cash Sales Commission (%)</Label>
+        {cashTiers.map((tier, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <span className="text-xs text-zinc-400 w-24 shrink-0">R{tier.min_value.toLocaleString()}+</span>
+            <Input
+              type="number"
+              value={tier.percentage || ''}
+              onChange={(e) => {
+                const updated = [...cashTiers];
+                updated[idx] = { ...tier, percentage: parseFloat(e.target.value) || 0 };
+                setCashTiers(updated);
+              }}
+              placeholder="0"
+              data-testid={`cash-tier-${idx}-pct`}
+              className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
+            />
+            {idx >= 5 && (
+              <Button type="button" onClick={() => setCashTiers(cashTiers.filter((_, i) => i !== idx))} className="p-1 bg-red-900 hover:bg-red-800 text-red-100">
+                <Trash size={14} />
+              </Button>
+            )}
+          </div>
+        ))}
+        <Button
+          type="button"
+          onClick={() => {
+            const lastMin = cashTiers[cashTiers.length - 1]?.min_value || 100000;
+            setCashTiers([...cashTiers, { min_value: lastMin + 25000, percentage: 0 }]);
+          }}
+          data-testid="add-cash-tier-button"
+          className="text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+        >
+          + Add Tier
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Bonuses & Incentives</Label>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-400 w-24 shrink-0">Club Incentive</span>
+          <Input
+            type="number"
+            value={bonuses.club_incentive || ''}
+            onChange={(e) => setBonuses({ ...bonuses, club_incentive: parseFloat(e.target.value) || 0 })}
+            placeholder="0"
+            data-testid="club-incentive-input"
+            className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
+          />
+        </div>
+        {(bonuses.incentives || []).map((inc, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <Input
+              value={inc.name || ''}
+              onChange={(e) => {
+                const updated = [...bonuses.incentives];
+                updated[idx] = { ...inc, name: e.target.value };
+                setBonuses({ ...bonuses, incentives: updated });
+              }}
+              placeholder="Name"
+              className="bg-zinc-950 border-zinc-800 text-zinc-50 w-24"
+            />
+            <Input
+              type="number"
+              value={inc.value || ''}
+              onChange={(e) => {
+                const updated = [...bonuses.incentives];
+                updated[idx] = { ...inc, value: parseFloat(e.target.value) || 0 };
+                setBonuses({ ...bonuses, incentives: updated });
+              }}
+              placeholder="0"
+              data-testid={`incentive-${idx}-value`}
+              className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
+            />
+            <Button type="button" onClick={() => setBonuses({ ...bonuses, incentives: bonuses.incentives.filter((_, i) => i !== idx) })} className="p-1 bg-red-900 hover:bg-red-800 text-red-100">
+              <Trash size={14} />
+            </Button>
+          </div>
+        ))}
+        <Button
+          type="button"
+          onClick={() => setBonuses({ ...bonuses, incentives: [...(bonuses.incentives || []), { name: 'Incentive', value: 0 }] })}
+          data-testid="add-incentive-button"
+          className="text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+        >
+          + Add Incentive
+        </Button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-400 w-24 shrink-0">Special Bonus</span>
+          <Input
+            type="number"
+            value={bonuses.special_bonus || ''}
+            onChange={(e) => setBonuses({ ...bonuses, special_bonus: parseFloat(e.target.value) || 0 })}
+            placeholder="0"
+            data-testid="special-bonus-input"
+            className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+
+const WhatsAppStatusBadge = ({ userId }) => {
+  const [status, setStatus] = useState(null);
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await axios.get(`${API_URL}/api/whatsapp/status/${userId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setStatus(res.data.connected);
+      } catch {
+        setStatus(false);
+      }
+    };
+    check();
+  }, [userId]);
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-zinc-900 border border-zinc-800" data-testid={`wa-badge-${userId}`}>
+      <WhatsappLogo size={14} weight="duotone" className={status ? 'text-emerald-500' : 'text-zinc-600'} />
+      <span className={`text-xs font-medium ${status ? 'text-emerald-400' : 'text-zinc-500'}`}>
+        {status === null ? '...' : status ? 'WA' : 'No WA'}
+      </span>
+    </div>
+  );
+};
+
+
 const Settings = ({ user }) => {
   const [settings, setSettings] = useState(null);
   const [users, setUsers] = useState([]);
@@ -360,220 +573,6 @@ const Settings = ({ user }) => {
     } catch (error) {
       toast.error('Failed to delete template');
     }
-  };
-
-  // Small inline component to show WA status badge on user list
-  const WhatsAppStatusBadge = ({ userId }) => {
-    const [status, setStatus] = useState(null);
-    useEffect(() => {
-      const check = async () => {
-        try {
-          const token = localStorage.getItem('token');
-          const res = await axios.get(`${API_URL}/api/whatsapp/status/${userId}`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          setStatus(res.data.connected);
-        } catch {
-          setStatus(false);
-        }
-      };
-      check();
-    }, [userId]);
-    return (
-      <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-zinc-900 border border-zinc-800" data-testid={`wa-badge-${userId}`}>
-        <WhatsappLogo size={14} weight="duotone" className={status ? 'text-emerald-500' : 'text-zinc-600'} />
-        <span className={`text-xs font-medium ${status ? 'text-emerald-400' : 'text-zinc-500'}`}>
-          {status === null ? '...' : status ? 'WA' : 'No WA'}
-        </span>
-      </div>
-    );
-  };
-
-  // Earnings Scale Editor inline component
-  const EarningsScaleEditor = ({ selectedUser: su, setSelectedUser: setSU }) => {
-    const es = su.earnings_scale || {};
-    const updateES = (patch) => setSU({ ...su, earnings_scale: { ...es, ...patch } });
-
-    const debitTiers = es.debit_order_tiers || [
-      { min_units: 1, max_units: 10, rate: 0 },
-      { min_units: 11, max_units: 19, rate: 0 },
-      { min_units: 20, max_units: 29, rate: 0 },
-      { min_units: 31, max_units: 999, rate: 0 }
-    ];
-    const cashTiers = es.cash_sales_tiers || [
-      { min_value: 1, percentage: 0 },
-      { min_value: 30000, percentage: 0 },
-      { min_value: 50000, percentage: 0 },
-      { min_value: 75000, percentage: 0 },
-      { min_value: 100000, percentage: 0 }
-    ];
-    const bonuses = es.bonuses || { club_incentive: 0, incentives: [], special_bonus: 0 };
-
-    const setDebitTiers = (tiers) => updateES({ debit_order_tiers: tiers });
-    const setCashTiers = (tiers) => updateES({ cash_sales_tiers: tiers });
-    const setBonuses = (b) => updateES({ bonuses: b });
-
-    return (
-      <div className="border-t border-zinc-800 pt-5 space-y-4" data-testid="earnings-scale-section">
-        <h4 className="text-base font-bold text-zinc-100 flex items-center gap-2">
-          <CurrencyCircleDollar size={24} weight="duotone" className="text-amber-500" />
-          Earnings Scale
-        </h4>
-
-        {/* Basic Salary */}
-        <div className="space-y-1">
-          <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Basic Salary (R)</Label>
-          <Input
-            type="number"
-            value={es.basic_salary || ''}
-            onChange={(e) => updateES({ basic_salary: parseFloat(e.target.value) || 0 })}
-            placeholder="0"
-            data-testid="basic-salary-input"
-            className="bg-zinc-950 border-zinc-800 text-zinc-50"
-          />
-        </div>
-
-        {/* Debit Order Tiers */}
-        <div className="space-y-2">
-          <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Debit Orders Commission (R per unit)</Label>
-          {debitTiers.map((tier, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <span className="text-xs text-zinc-400 w-24 shrink-0">{tier.min_units}{tier.max_units < 999 ? `-${tier.max_units}` : '+'} units</span>
-              <Input
-                type="number"
-                value={tier.rate || ''}
-                onChange={(e) => {
-                  const updated = [...debitTiers];
-                  updated[idx] = { ...tier, rate: parseFloat(e.target.value) || 0 };
-                  setDebitTiers(updated);
-                }}
-                placeholder="0"
-                data-testid={`debit-tier-${idx}-rate`}
-                className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
-              />
-              {idx >= 4 && (
-                <Button type="button" onClick={() => setDebitTiers(debitTiers.filter((_, i) => i !== idx))} className="p-1 bg-red-900 hover:bg-red-800 text-red-100">
-                  <Trash size={14} />
-                </Button>
-              )}
-            </div>
-          ))}
-          <Button
-            type="button"
-            onClick={() => {
-              const lastMax = debitTiers[debitTiers.length - 1]?.min_units || 30;
-              setDebitTiers([...debitTiers, { min_units: lastMax + 1, max_units: 999, rate: 0 }]);
-            }}
-            data-testid="add-debit-tier-button"
-            className="text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-          >
-            + Add Tier
-          </Button>
-        </div>
-
-        {/* Cash Sales Tiers */}
-        <div className="space-y-2">
-          <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Cash Sales Commission (%)</Label>
-          {cashTiers.map((tier, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <span className="text-xs text-zinc-400 w-24 shrink-0">R{tier.min_value.toLocaleString()}+</span>
-              <Input
-                type="number"
-                value={tier.percentage || ''}
-                onChange={(e) => {
-                  const updated = [...cashTiers];
-                  updated[idx] = { ...tier, percentage: parseFloat(e.target.value) || 0 };
-                  setCashTiers(updated);
-                }}
-                placeholder="0"
-                data-testid={`cash-tier-${idx}-pct`}
-                className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
-              />
-              {idx >= 5 && (
-                <Button type="button" onClick={() => setCashTiers(cashTiers.filter((_, i) => i !== idx))} className="p-1 bg-red-900 hover:bg-red-800 text-red-100">
-                  <Trash size={14} />
-                </Button>
-              )}
-            </div>
-          ))}
-          <Button
-            type="button"
-            onClick={() => {
-              const lastMin = cashTiers[cashTiers.length - 1]?.min_value || 100000;
-              setCashTiers([...cashTiers, { min_value: lastMin + 25000, percentage: 0 }]);
-            }}
-            data-testid="add-cash-tier-button"
-            className="text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-          >
-            + Add Tier
-          </Button>
-        </div>
-
-        {/* Bonuses */}
-        <div className="space-y-2">
-          <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Bonuses & Incentives</Label>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400 w-24 shrink-0">Club Incentive</span>
-            <Input
-              type="number"
-              value={bonuses.club_incentive || ''}
-              onChange={(e) => setBonuses({ ...bonuses, club_incentive: parseFloat(e.target.value) || 0 })}
-              placeholder="0"
-              data-testid="club-incentive-input"
-              className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
-            />
-          </div>
-          {(bonuses.incentives || []).map((inc, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <Input
-                value={inc.name || ''}
-                onChange={(e) => {
-                  const updated = [...bonuses.incentives];
-                  updated[idx] = { ...inc, name: e.target.value };
-                  setBonuses({ ...bonuses, incentives: updated });
-                }}
-                placeholder="Name"
-                className="bg-zinc-950 border-zinc-800 text-zinc-50 w-24"
-              />
-              <Input
-                type="number"
-                value={inc.value || ''}
-                onChange={(e) => {
-                  const updated = [...bonuses.incentives];
-                  updated[idx] = { ...inc, value: parseFloat(e.target.value) || 0 };
-                  setBonuses({ ...bonuses, incentives: updated });
-                }}
-                placeholder="0"
-                data-testid={`incentive-${idx}-value`}
-                className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
-              />
-              <Button type="button" onClick={() => setBonuses({ ...bonuses, incentives: bonuses.incentives.filter((_, i) => i !== idx) })} className="p-1 bg-red-900 hover:bg-red-800 text-red-100">
-                <Trash size={14} />
-              </Button>
-            </div>
-          ))}
-          <Button
-            type="button"
-            onClick={() => setBonuses({ ...bonuses, incentives: [...(bonuses.incentives || []), { name: 'Incentive', value: 0 }] })}
-            data-testid="add-incentive-button"
-            className="text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-          >
-            + Add Incentive
-          </Button>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400 w-24 shrink-0">Special Bonus</span>
-            <Input
-              type="number"
-              value={bonuses.special_bonus || ''}
-              onChange={(e) => setBonuses({ ...bonuses, special_bonus: parseFloat(e.target.value) || 0 })}
-              placeholder="0"
-              data-testid="special-bonus-input"
-              className="bg-zinc-950 border-zinc-800 text-zinc-50 flex-1"
-            />
-          </div>
-        </div>
-      </div>
-    );
   };
 
 
