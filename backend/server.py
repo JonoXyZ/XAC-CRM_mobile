@@ -22,6 +22,8 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+WHATSAPP_SERVICE_URL = os.environ.get('WHATSAPP_SERVICE_URL', 'http://localhost:3001')
+
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
@@ -1027,7 +1029,7 @@ async def send_whatsapp(message: WhatsAppMessageRequest, current_user: dict = De
     # Send via WhatsApp service
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post("http://localhost:3001/send-message", json={
+            response = await client.post(f"{WHATSAPP_SERVICE_URL}/send-message", json={
                 "userId": user_id,
                 "phoneNumber": message.phone_number,
                 "message": message_text
@@ -1059,7 +1061,7 @@ async def whatsapp_status(current_user: dict = Depends(get_current_user)):
     
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"http://localhost:3001/status/{user_id}")
+            response = await client.get(f"{WHATSAPP_SERVICE_URL}/status/{user_id}")
             status = response.json()
             return status
     except Exception as e:
@@ -1073,7 +1075,7 @@ async def whatsapp_status_by_user(user_id: str, current_user: dict = Depends(get
     
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"http://localhost:3001/status/{user_id}")
+            response = await client.get(f"{WHATSAPP_SERVICE_URL}/status/{user_id}")
             status = response.json()
             return status
     except Exception as e:
@@ -1087,7 +1089,7 @@ async def start_whatsapp_session(user_id: str, current_user: dict = Depends(get_
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post("http://localhost:3001/start-session", json={
+            response = await client.post(f"{WHATSAPP_SERVICE_URL}/start-session", json={
                 "userId": user_id
             })
             result = response.json()
@@ -1103,7 +1105,7 @@ async def get_whatsapp_qr(user_id: str, current_user: dict = Depends(get_current
     
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"http://localhost:3001/qr/{user_id}")
+            response = await client.get(f"{WHATSAPP_SERVICE_URL}/qr/{user_id}")
             if response.status_code == 200:
                 return response.json()
             else:
@@ -1119,7 +1121,7 @@ async def logout_whatsapp(user_id: str, current_user: dict = Depends(get_current
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post("http://localhost:3001/logout", json={
+            response = await client.post(f"{WHATSAPP_SERVICE_URL}/logout", json={
                 "userId": user_id
             })
             result = response.json()
@@ -1135,7 +1137,7 @@ async def get_all_whatsapp_status(current_user: dict = Depends(get_current_user)
     
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get("http://localhost:3001/status-all")
+            response = await client.get(f"{WHATSAPP_SERVICE_URL}/status-all")
             return response.json()
     except Exception as e:
         logger.error(f"WhatsApp status-all error: {e}")
