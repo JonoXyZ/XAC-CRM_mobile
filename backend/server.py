@@ -76,6 +76,7 @@ class UserResponse(BaseModel):
     active: bool
     linked_consultants: List[str] = []
     created_at: str
+    earnings_scale: Optional[Dict[str, Any]] = None
 
 class LeadCreate(BaseModel):
     name: str
@@ -283,7 +284,8 @@ async def get_users(current_user: dict = Depends(get_current_user)):
             phone=user.get("phone"),
             active=user.get("active", True),
             linked_consultants=user.get("linked_consultants", []),
-            created_at=user.get("created_at", "")
+            created_at=user.get("created_at", ""),
+            earnings_scale=user.get("earnings_scale")
         )
         for user in users
     ]
@@ -619,6 +621,237 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         "debit_sales": round(debit_total, 2),
         "total_units": total_units
     }
+
+@api_router.get("/dashboard/assistant-stats")
+async def get_assistant_dashboard_stats(current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    linked = current_user.get("linked_consultants", [])
+
+    # Total leads for linked consultants
+    lead_query = {"owner_id": {"$in": linked}} if linked else {"owner_id": user_id}
+    total_leads = await db.leads.count_documents(lead_query)
+
+    # Appointments booked by this assistant
+    apt_query = {"booked_by": user_id}
+    total_appointments = await db.appointments.count_documents(apt_query)
+
+    # Conversion = lead to appointment ratio
+    conversion_rate = (total_appointments / total_leads * 100) if total_leads > 0 else 0
+
+    # Count deals (not values) for linked consultants
+    deal_query = {"closed_by": {"$in": linked}} if linked else {}
+    deals = await db.deals.find(deal_query).to_list(1000)
+    cash_deals_count = sum(1 for d in deals if d["payment_type"] == "Cash")
+    debit_deals_count = sum(1 for d in deals if d["payment_type"] == "Debit Order")
+
+    # Appointment trend (last 6 months)
+    appointment_trend = []
+    now = datetime.now(timezone.utc)
+    for i in range(5, -1, -1):
+        month_dt = now - timedelta(days=30 * i)
+        month_str = month_dt.strftime("%Y-%m")
+        month_label = month_dt.strftime("%b")
+        count = await db.appointments.count_documents({
+            "booked_by": user_id,
+            "scheduled_at": {"$regex": f"^{month_str}"}
+        })
+        appointment_trend.append({"month": month_label, "appointments": count})
+
+    # Today's appointments
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_apts = await db.appointments.find({"booked_by": user_id, "scheduled_at": {"$regex": f"^{today}"}}).to_list(100)
+    lead_ids = [apt["lead_id"] for apt in today_apts]
+    leads_dict = {}
+    if lead_ids:
+        ld = await db.leads.find({"_id": {"$in": [ObjectId(lid) for lid in lead_ids]}}).to_list(100)
+        leads_dict = {str(l["_id"]): l for l in ld}
+
+    today_appointments = [
+        {
+            "id": str(apt["_id"]),
+            "lead_name": leads_dict.get(apt["lead_id"], {}).get("name", "Unknown"),
+            "lead_surname": leads_dict.get(apt["lead_id"], {}).get("surname"),
+            "scheduled_at": apt["scheduled_at"],
+            "notes": apt.get("notes")
+        }
+        for apt in today_apts
+    ]
+
+    return {
+        "total_leads": total_leads,
+        "total_appointments": total_appointments,
+        "conversion_rate": round(conversion_rate, 2),
+        "cash_deals_count": cash_deals_count,
+        "debit_deals_count": debit_deals_count,
+        "appointment_trend": appointment_trend,
+        "today_appointments": today_appointments
+    }
+
+def calculate_debit_commission(total_units, tiers):
+    """Calculate debit order commission based on unit tiers. Rate is Rand per unit."""
+    if not tiers:
+        return 0
+    # Sort tiers by min_units
+    sorted_tiers = sorted(tiers, key=lambda t: t.get("min_units", 0))
+    applicable_rate = 0
+    for tier in sorted_tiers:
+        if total_units >= tier.get("min_units", 0):
+            applicable_rate = tier.get("rate", 0)
+    return total_units * applicable_rate
+
+def calculate_cash_commission(total_value, tiers):
+    """Calculate cash sales commission based on value tiers. Rate is a percentage."""
+    if not tiers:
+        return 0
+    sorted_tiers = sorted(tiers, key=lambda t: t.get("min_value", 0))
+    applicable_pct = 0
+    for tier in sorted_tiers:
+        if total_value >= tier.get("min_value", 0):
+            applicable_pct = tier.get("percentage", 0)
+    return total_value * applicable_pct / 100
+
+@api_router.get("/commission")
+async def get_commission(
+    user_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    # Determine target user
+    if user_id and current_user["role"] == UserRole.ADMIN:
+        target_user = await db.users.find_one({"_id": ObjectId(user_id)})
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+    elif current_user["role"] in [UserRole.CONSULTANT, UserRole.ASSISTANT]:
+        target_user = current_user
+        user_id = str(current_user["_id"])
+    else:
+        raise HTTPException(status_code=400, detail="user_id required for admin")
+
+    target_id = str(target_user["_id"])
+    earnings = target_user.get("earnings_scale", {})
+
+    # Get current month period
+    settings = await db.settings.find_one({"key": "system_settings"})
+    month_start = settings.get("month_start_date") if settings else None
+    month_end = settings.get("month_end_date") if settings else None
+
+    # Get deals for this consultant in current period
+    deal_query = {"closed_by": target_id}
+    if month_start and month_end:
+        deal_query["deal_date"] = {"$gte": month_start, "$lte": month_end}
+
+    deals = await db.deals.find(deal_query).to_list(1000)
+
+    # Enrich deals with lead info
+    lead_ids = list(set([d["lead_id"] for d in deals]))
+    leads_dict = {}
+    if lead_ids:
+        leads_list = await db.leads.find({"_id": {"$in": [ObjectId(lid) for lid in lead_ids]}}).to_list(1000)
+        leads_dict = {str(ld["_id"]): ld for ld in leads_list}
+
+    # Separate deals
+    debit_deals = []
+    cash_deals = []
+    for d in deals:
+        lead = leads_dict.get(d["lead_id"], {})
+        deal_info = {
+            "id": str(d["_id"]),
+            "deal_date": d["deal_date"],
+            "client_name": f"{lead.get('name', 'Unknown')} {lead.get('surname', '')}".strip(),
+            "client_number": lead.get("phone", ""),
+            "payment_type": d["payment_type"],
+            "sales_value": d.get("sales_value"),
+            "joining_fee": d.get("joining_fee"),
+            "debit_order_value": d.get("debit_order_value"),
+            "units": d.get("units", 0) or 0,
+            "term": d.get("term")
+        }
+        if d["payment_type"] == "Debit Order":
+            debit_deals.append(deal_info)
+        elif d["payment_type"] == "Cash":
+            cash_deals.append(deal_info)
+
+    # Totals
+    total_debit_units = sum(d["units"] for d in debit_deals)
+    total_cash_value = sum((d["sales_value"] or 0) for d in cash_deals)
+    total_joining_fees = sum((d.get("joining_fee") or 0) for d in debit_deals)
+    total_debit_value = sum((d.get("debit_order_value") or 0) for d in debit_deals)
+
+    # Commission calculations
+    debit_tiers = earnings.get("debit_order_tiers", [])
+    cash_tiers = earnings.get("cash_sales_tiers", [])
+    basic_salary = earnings.get("basic_salary", 0) or 0
+
+    debit_commission = calculate_debit_commission(total_debit_units, debit_tiers)
+    cash_commission = calculate_cash_commission(total_cash_value, cash_tiers)
+
+    # Bonuses
+    bonuses = earnings.get("bonuses", {})
+    club_incentive = bonuses.get("club_incentive", 0) or 0
+    special_bonus = bonuses.get("special_bonus", 0) or 0
+    extra_incentives = bonuses.get("incentives", [])
+    total_incentives = sum((inc.get("value", 0) or 0) for inc in extra_incentives)
+    total_bonuses = club_incentive + special_bonus + total_incentives
+
+    earnings_mtd = basic_salary + debit_commission + cash_commission + total_bonuses
+
+    # Income goal
+    goal_doc = await db.commission_goals.find_one({"user_id": target_id, "period_start": month_start})
+    income_goal = goal_doc["goal"] if goal_doc else 0
+
+    # Find applicable tier info for PDF footer
+    debit_rate = 0
+    for tier in sorted(debit_tiers, key=lambda t: t.get("min_units", 0)):
+        if total_debit_units >= tier.get("min_units", 0):
+            debit_rate = tier.get("rate", 0)
+    cash_pct = 0
+    for tier in sorted(cash_tiers, key=lambda t: t.get("min_value", 0)):
+        if total_cash_value >= tier.get("min_value", 0):
+            cash_pct = tier.get("percentage", 0)
+
+    return {
+        "consultant_name": target_user["name"],
+        "consultant_id": target_id,
+        "month_start": month_start,
+        "month_end": month_end,
+        "basic_salary": basic_salary,
+        "debit_commission": round(debit_commission, 2),
+        "cash_commission": round(cash_commission, 2),
+        "total_bonuses": round(total_bonuses, 2),
+        "bonuses_detail": {
+            "club_incentive": club_incentive,
+            "special_bonus": special_bonus,
+            "incentives": extra_incentives
+        },
+        "earnings_mtd": round(earnings_mtd, 2),
+        "income_goal": income_goal,
+        "debit_deals": debit_deals,
+        "cash_deals": cash_deals,
+        "total_debit_units": total_debit_units,
+        "total_cash_value": round(total_cash_value, 2),
+        "total_joining_fees": round(total_joining_fees, 2),
+        "total_debit_value": round(total_debit_value, 2),
+        "debit_rate": debit_rate,
+        "cash_pct": cash_pct,
+        "earnings_scale": earnings
+    }
+
+@api_router.put("/commission/goal")
+async def set_commission_goal(
+    data: Dict[str, Any],
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = data.get("user_id", str(current_user["_id"]))
+    goal = data.get("goal", 0)
+
+    settings = await db.settings.find_one({"key": "system_settings"})
+    period_start = settings.get("month_start_date") if settings else None
+
+    await db.commission_goals.update_one(
+        {"user_id": user_id, "period_start": period_start},
+        {"$set": {"user_id": user_id, "period_start": period_start, "goal": goal}},
+        upsert=True
+    )
+    return {"success": True}
 
 @api_router.get("/settings")
 async def get_settings(current_user: dict = Depends(get_current_user)):

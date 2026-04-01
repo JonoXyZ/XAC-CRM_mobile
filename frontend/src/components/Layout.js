@@ -10,7 +10,8 @@ import {
   Robot,
   GearSix, 
   SignOut,
-  Barbell
+  Barbell,
+  CurrencyCircleDollar
 } from '@phosphor-icons/react';
 
 const Layout = ({ children, user }) => {
@@ -34,6 +35,11 @@ const Layout = ({ children, user }) => {
       { path: '/reports', icon: FileText, label: 'Reports', testId: 'nav-reports' },
       { path: '/analytics', icon: ChartBar, label: 'Analytics', testId: 'nav-analytics' }
     );
+  }
+
+  // Commission visible to admin + consultants
+  if (user?.role === 'admin' || user?.role === 'consultant') {
+    menuItems.push({ path: '/commission', icon: CurrencyCircleDollar, label: 'Commission', testId: 'nav-commission' });
   }
 
   if (user?.role === 'admin') {

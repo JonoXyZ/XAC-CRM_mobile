@@ -6,6 +6,7 @@ import Leads from './pages/Leads';
 import Appointments from './pages/Appointments';
 import Reports from './pages/Reports';
 import Analytics from './pages/Analytics';
+import Commission from './pages/Commission';
 import EmergentFixes from './pages/EmergentFixes';
 import Settings from './pages/Settings';
 import FloatingChatButton from './components/FloatingChatButton';
@@ -79,6 +80,14 @@ function App() {
           element={
             <ProtectedRoute>
               <EmergentFixes user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/commission"
+          element={
+            <ProtectedRoute>
+              <Commission user={user} />
             </ProtectedRoute>
           }
         />

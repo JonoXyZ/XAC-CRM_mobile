@@ -19,10 +19,17 @@ const Dashboard = ({ user }) => {
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [monthPeriod, setMonthPeriod] = useState({ month_start_date: '', month_end_date: '' });
   const [loading, setLoading] = useState(true);
+  const [assistantStats, setAssistantStats] = useState(null);
+
+  const isAssistant = user?.role === 'assistant';
 
   useEffect(() => {
-    fetchStats();
-    fetchTodayAppointments();
+    if (isAssistant) {
+      fetchAssistantStats();
+    } else {
+      fetchStats();
+      fetchTodayAppointments();
+    }
     fetchSettings();
   }, []);
 
@@ -35,6 +42,20 @@ const Dashboard = ({ user }) => {
       setStats(response.data);
     } catch (error) {
       console.error('Failed to fetch stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAssistantStats = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/dashboard/assistant-stats`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAssistantStats(response.data);
+    } catch (error) {
+      console.error('Failed to fetch assistant stats:', error);
     } finally {
       setLoading(false);
     }
@@ -169,6 +190,105 @@ const Dashboard = ({ user }) => {
 
         {loading ? (
           <div className="text-center py-12 text-zinc-400">Loading stats...</div>
+        ) : isAssistant && assistantStats ? (
+          /* ===== ASSISTANT DASHBOARD ===== */
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              <Card className="stat-card" data-testid="assistant-total-leads-card">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs tracking-wider uppercase font-bold text-zinc-500">Total Leads</p>
+                    <p className="mt-2 text-3xl font-black text-zinc-50">{assistantStats.total_leads}</p>
+                  </div>
+                  <Users size={32} weight="duotone" className="text-lime-400" />
+                </div>
+              </Card>
+
+              <Card className="stat-card" data-testid="assistant-conversion-card">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs tracking-wider uppercase font-bold text-zinc-500">Lead to Appt Ratio</p>
+                    <p className="mt-2 text-3xl font-black text-zinc-50">{assistantStats.conversion_rate}%</p>
+                  </div>
+                  <Target size={32} weight="duotone" className="text-cyan-500" />
+                </div>
+              </Card>
+
+              <Card className="stat-card" data-testid="assistant-cash-deals-card">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs tracking-wider uppercase font-bold text-zinc-500">Cash Deals</p>
+                    <p className="mt-2 text-3xl font-black text-zinc-50">{assistantStats.cash_deals_count}</p>
+                  </div>
+                  <TrendUp size={32} weight="duotone" className="text-emerald-500" />
+                </div>
+              </Card>
+
+              <Card className="stat-card" data-testid="assistant-debit-deals-card">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs tracking-wider uppercase font-bold text-zinc-500">Debit Order Deals</p>
+                    <p className="mt-2 text-3xl font-black text-zinc-50">{assistantStats.debit_deals_count}</p>
+                  </div>
+                  <Clock size={32} weight="duotone" className="text-amber-500" />
+                </div>
+              </Card>
+            </div>
+
+            {/* Appointment Trend Graph */}
+            <Card className="stat-card p-6" data-testid="appointment-trend-card">
+              <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Appointment Trend</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={assistantStats.appointment_trend || []}>
+                  <defs>
+                    <linearGradient id="colorAppointments" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                  <XAxis dataKey="month" stroke="#71717a" />
+                  <YAxis stroke="#71717a" />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#18181b',
+                      border: '1px solid #27272a',
+                      borderRadius: '0.375rem',
+                      color: '#fafafa'
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="appointments"
+                    stroke="#22d3ee"
+                    fillOpacity={1}
+                    fill="url(#colorAppointments)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Card>
+
+            {/* Appointments Today (under graph) */}
+            <Card className="stat-card p-6" data-testid="assistant-today-appointments-card">
+              <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Today's Appointments</h3>
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {assistantStats.today_appointments?.length > 0 ? (
+                  assistantStats.today_appointments.map((apt) => (
+                    <div key={apt.id} className="flex items-center justify-between text-sm p-3 bg-zinc-950 rounded">
+                      <div>
+                        <p className="font-semibold text-zinc-100">
+                          {apt.scheduled_at?.split('T')[1]?.substring(0, 5) || ''} - {apt.lead_name} {apt.lead_surname || ''}
+                        </p>
+                        {apt.notes && <p className="text-xs text-zinc-400">{apt.notes}</p>}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-zinc-500">No appointments today</p>
+                )}
+              </div>
+            </Card>
+          </>
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
