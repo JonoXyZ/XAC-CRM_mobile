@@ -356,21 +356,65 @@ const Settings = ({ user }) => {
               <div className="flex items-start gap-4">
                 <FileText size={48} weight="duotone" className="text-amber-500" />
                 <div className="flex-1">
-                  <h3 className="text-xl font-semibold text-zinc-100">Google Calendar Integration</h3>
+                  <h3 className="text-xl font-semibold text-zinc-100">Appointment Calendar System</h3>
                   <p className="text-sm text-zinc-400 mt-1">
-                    Sync appointments to Google Calendar automatically
+                    Built-in calendar for managing gym appointments and schedules
                   </p>
                 </div>
               </div>
 
               <div className="mt-6 p-4 bg-zinc-950 rounded-md border border-zinc-800">
-                <h4 className="text-sm font-bold text-zinc-300 mb-3">Coming Soon</h4>
-                <p className="text-sm text-zinc-400">
-                  Configure per-consultant Google Calendar integration. Visit{' '}
-                  <a href="https://revivalfitness.co.za" target="_blank" rel="noopener noreferrer" className="text-lime-400 hover:underline">
+                <h4 className="text-sm font-bold text-zinc-300 mb-3">How to Use the Built-In Calendar:</h4>
+                <ol className="space-y-2 text-sm text-zinc-400">
+                  <li className="flex items-start gap-2">
+                    <span className="font-bold text-lime-400 min-w-[20px]">1.</span>
+                    <span><strong>Book Appointments:</strong> Click "Book Appointment" on any lead card in the Leads page</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-bold text-lime-400 min-w-[20px]">2.</span>
+                    <span><strong>View Calendar:</strong> Navigate to "Appointments" in the sidebar to see your daily schedule</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-bold text-lime-400 min-w-[20px]">3.</span>
+                    <span><strong>Time Slots:</strong> Mon-Thu: 09:00-18:30 | Fri: 09:00-16:30 | Sat: 09:00-13:30</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-bold text-lime-400 min-w-[20px]">4.</span>
+                    <span><strong>Edit/Reschedule:</strong> Click "Edit" on any appointment to change date/time or add notes</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-bold text-lime-400 min-w-[20px]">5.</span>
+                    <span><strong>Dashboard View:</strong> All users see today's appointments on their dashboard</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-bold text-lime-400 min-w-[20px]">6.</span>
+                    <span><strong>WhatsApp Reminders:</strong> System sends 24h and 2h reminders before appointments (when WhatsApp is connected)</span>
+                  </li>
+                </ol>
+                <div className="mt-4 p-3 bg-lime-400/10 border border-lime-400/20 rounded">
+                  <p className="text-xs text-lime-400 font-semibold">✓ Built-In Features:</p>
+                  <ul className="text-xs text-zinc-400 mt-2 space-y-1 ml-4">
+                    <li>• 20-minute appointment slots with 10-min breaks</li>
+                    <li>• Automatic lead stage update to "Appointment Set"</li>
+                    <li>• Track who booked (consultant or assistant)</li>
+                    <li>• Filter by date to view any day's schedule</li>
+                    <li>• Consultant and lead information on each slot</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mt-4 p-4 bg-zinc-900 rounded-md border border-zinc-800">
+                <h4 className="text-sm font-bold text-zinc-300 mb-2">External Google Calendar Sync (Optional)</h4>
+                <p className="text-xs text-zinc-500">
+                  For personal Google Calendar synchronization, consultants can manually add appointments to their Google Calendar using the appointment details. 
+                  Future updates may include automatic Google Calendar integration via API.
+                </p>
+                <p className="text-xs text-cyan-400 mt-2">
+                  Visit{' '}
+                  <a href="https://revivalfitness.co.za" target="_blank" rel="noopener noreferrer" className="underline hover:text-cyan-300">
                     revivalfitness.co.za
                   </a>{' '}
-                  for more information.
+                  for training materials and setup guides.
                 </p>
               </div>
             </Card>
