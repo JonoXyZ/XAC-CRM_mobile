@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { BrandingContext } from '../App';
 import { Button } from './ui/button';
+import NotificationBell from './NotificationBell';
 import { 
   House, 
   Users, 
@@ -151,6 +152,15 @@ const Layout = ({ children, user }) => {
       </aside>
 
       <main className="ml-64 flex-1">
+        <div className="sticky top-0 z-30 h-14 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50 flex items-center justify-end px-6">
+          <div className="flex items-center gap-4">
+            <NotificationBell />
+            <div className="text-right">
+              <p className="text-sm font-semibold text-zinc-200">{user?.name}</p>
+              <p className="text-xs text-zinc-500 capitalize">{user?.role?.replace('_', ' ')}</p>
+            </div>
+          </div>
+        </div>
         {children}
       </main>
     </div>

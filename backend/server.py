@@ -28,6 +28,48 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# ==========================================
+# Notification System
+# ==========================================
+
+async def create_notification(user_id: str, notif_type: str, title: str, message: str, lead_id: str = None, send_whatsapp: bool = True):
+    """Create in-app notification and optionally send WhatsApp push."""
+    notif_doc = {
+        "user_id": user_id,
+        "type": notif_type,
+        "title": title,
+        "message": message,
+        "lead_id": lead_id,
+        "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.notifications.insert_one(notif_doc)
+    
+    if send_whatsapp:
+        try:
+            # Find user's phone to send WhatsApp notification
+            user = await db.users.find_one({"_id": ObjectId(user_id)})
+            if user and user.get("phone"):
+                phone = user["phone"]
+                wa_message = f"*{title}*\n{message}"
+                async with httpx.AsyncClient(timeout=10.0) as http_client:
+                    await http_client.post(f"{WHATSAPP_SERVICE_URL}/send-message", json={
+                        "userId": user_id,
+                        "phoneNumber": phone,
+                        "message": wa_message
+                    })
+        except Exception as e:
+            logger.warning(f"WhatsApp notification failed for {user_id}: {e}")
+
+async def notify_managers(notif_type: str, title: str, message: str, lead_id: str = None):
+    """Send notification to all admins and sales managers."""
+    managers = await db.users.find({
+        "role": {"$in": [UserRole.ADMIN, UserRole.SALES_MANAGER, UserRole.CLUB_MANAGER]},
+        "active": True
+    }).to_list(100)
+    for mgr in managers:
+        await create_notification(str(mgr["_id"]), notif_type, title, message, lead_id)
 security = HTTPBearer()
 
 JWT_SECRET = os.environ.get('JWT_SECRET', 'xac_crm_secret_key_2026_revival_fitness')
@@ -280,6 +322,50 @@ async def register(user_data: UserCreate, current_user: dict = Depends(get_curre
     
     return UserResponse(**user_doc)
 
+
+# ==========================================
+# Notification Endpoints
+# ==========================================
+
+@api_router.get("/notifications")
+async def get_notifications(current_user: dict = Depends(get_current_user)):
+    notifs = await db.notifications.find(
+        {"user_id": str(current_user["_id"])}
+    ).sort("created_at", -1).to_list(50)
+    return [{
+        "id": str(n["_id"]),
+        "type": n["type"],
+        "title": n["title"],
+        "message": n["message"],
+        "lead_id": n.get("lead_id"),
+        "read": n.get("read", False),
+        "created_at": n["created_at"]
+    } for n in notifs]
+
+@api_router.get("/notifications/unread-count")
+async def get_unread_count(current_user: dict = Depends(get_current_user)):
+    count = await db.notifications.count_documents({
+        "user_id": str(current_user["_id"]),
+        "read": False
+    })
+    return {"count": count}
+
+@api_router.put("/notifications/{notif_id}/read")
+async def mark_notification_read(notif_id: str, current_user: dict = Depends(get_current_user)):
+    await db.notifications.update_one(
+        {"_id": ObjectId(notif_id), "user_id": str(current_user["_id"])},
+        {"$set": {"read": True}}
+    )
+    return {"success": True}
+
+@api_router.put("/notifications/mark-all-read")
+async def mark_all_notifications_read(current_user: dict = Depends(get_current_user)):
+    await db.notifications.update_many(
+        {"user_id": str(current_user["_id"]), "read": False},
+        {"$set": {"read": True}}
+    )
+    return {"success": True}
+
 @api_router.get("/users", response_model=List[UserResponse])
 async def get_users(current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
@@ -324,6 +410,7 @@ async def delete_user(user_id: str, current_user: dict = Depends(get_current_use
 @api_router.post("/leads", response_model=LeadResponse)
 async def create_lead(lead_data: LeadCreate, current_user: dict = Depends(get_current_user)):
     consultant = await get_next_consultant_for_assignment()
+    consultant = await get_next_consultant_for_assignment()
     
     lead_doc = {
         "name": lead_data.name,
@@ -355,6 +442,14 @@ async def create_lead(lead_data: LeadCreate, current_user: dict = Depends(get_cu
     
     if consultant:
         owner_name = consultant["name"]
+        # Notify consultant: New Lead Assigned
+        await create_notification(
+            str(consultant["_id"]),
+            "new_lead",
+            "New Lead Assigned",
+            f"{lead_data.name} ({lead_data.source}) has been assigned to you.",
+            lead_doc["id"]
+        )
     else:
         owner_name = None
     
@@ -463,6 +558,16 @@ async def update_lead(lead_id: str, lead_update: LeadUpdate, current_user: dict 
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "details": {"from": old_stage, "to": new_stage}
         })
+        
+        # Notify lead owner: Stage Changed
+        if lead.get("owner_id") and lead["owner_id"] != str(current_user["_id"]):
+            await create_notification(
+                lead["owner_id"],
+                "stage_changed",
+                "Lead Stage Updated",
+                f"{lead['name']} moved from {old_stage} to {new_stage}.",
+                lead_id
+            )
         
         # If lead is moved OUT of Closed Won, delete associated deals (deduct from MTD sales)
         if old_stage == LeadStage.CLOSED_WON and new_stage != LeadStage.CLOSED_WON:
@@ -591,6 +696,17 @@ async def create_deal(deal: DealCreate, current_user: dict = Depends(get_current
     await db.leads.update_one(
         {"_id": ObjectId(deal.lead_id)},
         {"$set": {"stage": LeadStage.CLOSED_WON}}
+    )
+    
+    # Notify managers: New Deal Closed
+    lead = await db.leads.find_one({"_id": ObjectId(deal.lead_id)})
+    lead_name = lead["name"] if lead else "Unknown"
+    deal_value = deal.sales_value or deal.debit_order_value or 0
+    await notify_managers(
+        "deal_closed",
+        "New Deal Closed!",
+        f"{lead_name} — {deal.payment_type} R{deal_value} closed by {current_user['name']}.",
+        deal.lead_id
     )
     
     return {"success": True, "deal_id": str(result.inserted_id)}
@@ -966,6 +1082,18 @@ async def create_appointment(appointment: AppointmentCreate, current_user: dict 
         {"$set": {"stage": LeadStage.APPOINTMENT_SET}}
     )
     
+    # Notify lead owner: New Appointment Booked
+    lead = await db.leads.find_one({"_id": ObjectId(appointment.lead_id)})
+    if lead and lead.get("owner_id"):
+        sched_time = appointment.scheduled_at.replace("T", " at ")[:16]
+        await create_notification(
+            lead["owner_id"],
+            "appointment_booked",
+            "New Appointment Booked",
+            f"Appointment for {lead['name']} on {sched_time}.",
+            appointment.lead_id
+        )
+    
     return {"success": True, "appointment_id": str(result.inserted_id)}
 
 @api_router.get("/appointments")
@@ -1328,6 +1456,16 @@ async def process_appointment_trigger(consultant_user_id: str, chat_phone: str, 
         logger.error(f"Failed to schedule confirmation: {e}")
     
     logger.info(f"Auto-appointment created: {client_name} - {parsed['appointment_type']} on {parsed['date']} {parsed['time']}")
+    
+    # Notify consultant: WhatsApp Auto-Appointment Created
+    await create_notification(
+        consultant_user_id,
+        "auto_appointment",
+        "Auto-Appointment Created",
+        f"Appointment for {client_name} — {type_label} on {parsed['date']} at {parsed['time']} (via WhatsApp trigger).",
+        lead_id
+    )
+    
     return str(apt_result.inserted_id)
 
 class AutoAppointmentRequest(BaseModel):
@@ -1977,6 +2115,17 @@ async def meta_webhook_receive(payload: Dict[str, Any]):
                 result = await db.leads.insert_one(lead_doc)
                 leads_created += 1
                 logger.info(f"Meta lead created: {name} {surname} - {phone}")
+                
+                # Notify: Meta Lead Captured
+                if consultant:
+                    await create_notification(
+                        str(consultant["_id"]),
+                        "meta_lead",
+                        "New Facebook Lead!",
+                        f"{name} {surname} ({phone}) from Facebook Lead Ad.",
+                        str(result.inserted_id)
+                    )
+                await notify_managers("meta_lead", "Facebook Lead Captured", f"{name} {surname} — {phone}", str(result.inserted_id))
         
         # If no entries format, try flat payload (from Make/Zapier direct)
         if leads_created == 0 and (payload.get("name") or payload.get("first_name") or payload.get("full_name")):
@@ -2007,6 +2156,17 @@ async def meta_webhook_receive(payload: Dict[str, Any]):
             result = await db.leads.insert_one(lead_doc)
             leads_created += 1
             logger.info(f"Meta flat lead created: {name}")
+            
+            # Notify: Meta Lead Captured
+            if consultant:
+                await create_notification(
+                    str(consultant["_id"]),
+                    "meta_lead",
+                    "New Facebook Lead!",
+                    f"{name} ({phone}) from Facebook Lead Ad.",
+                    str(result.inserted_id)
+                )
+            await notify_managers("meta_lead", "Facebook Lead Captured", f"{name} — {phone}", str(result.inserted_id))
         
         return {"success": True, "leads_created": leads_created}
     
@@ -2327,8 +2487,74 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import asyncio as async_lib
+
+async def appointment_reminder_loop():
+    """Background task: check for upcoming appointments and send reminders."""
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            
+            # 24h reminder
+            window_24h_start = (now + timedelta(hours=23, minutes=30)).isoformat()
+            window_24h_end = (now + timedelta(hours=24, minutes=30)).isoformat()
+            
+            apts_24h = await db.appointments.find({
+                "scheduled_at": {"$gte": window_24h_start, "$lte": window_24h_end},
+                "reminder_24h_sent": {"$ne": True}
+            }).to_list(100)
+            
+            for apt in apts_24h:
+                lead = await db.leads.find_one({"_id": ObjectId(apt["lead_id"])})
+                if lead and apt.get("booked_by"):
+                    sched = apt["scheduled_at"].replace("T", " at ")[:16]
+                    await create_notification(
+                        apt["booked_by"],
+                        "appointment_reminder",
+                        "Appointment Tomorrow",
+                        f"Reminder: {lead['name']} — appointment at {sched}.",
+                        apt["lead_id"]
+                    )
+                    await db.appointments.update_one(
+                        {"_id": apt["_id"]},
+                        {"$set": {"reminder_24h_sent": True}}
+                    )
+            
+            # 2h reminder
+            window_2h_start = (now + timedelta(hours=1, minutes=30)).isoformat()
+            window_2h_end = (now + timedelta(hours=2, minutes=30)).isoformat()
+            
+            apts_2h = await db.appointments.find({
+                "scheduled_at": {"$gte": window_2h_start, "$lte": window_2h_end},
+                "reminder_2h_sent": {"$ne": True}
+            }).to_list(100)
+            
+            for apt in apts_2h:
+                lead = await db.leads.find_one({"_id": ObjectId(apt["lead_id"])})
+                if lead and apt.get("booked_by"):
+                    sched_time = apt["scheduled_at"].split("T")[1][:5] if "T" in apt["scheduled_at"] else apt["scheduled_at"]
+                    await create_notification(
+                        apt["booked_by"],
+                        "appointment_reminder",
+                        "Appointment in 2 Hours",
+                        f"{lead['name']} — appointment at {sched_time} today!",
+                        apt["lead_id"]
+                    )
+                    await db.appointments.update_one(
+                        {"_id": apt["_id"]},
+                        {"$set": {"reminder_2h_sent": True}}
+                    )
+        except Exception as e:
+            logger.error(f"Appointment reminder error: {e}")
+        
+        await async_lib.sleep(300)  # Check every 5 minutes
+
 @app.on_event("startup")
 async def startup_db():
+    # Start appointment reminder checker
+    import asyncio
+    asyncio.create_task(appointment_reminder_loop())
+    
     admin_exists = await db.users.find_one({"role": UserRole.ADMIN})
     
     if not admin_exists:
