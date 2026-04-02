@@ -40,10 +40,11 @@ const WhatsAppManagement = ({ users }) => {
     
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/whatsapp/start-session?user_id=${user.id}`, {}, {
+      const response = await axios.post(`${API_URL}/api/whatsapp/start-session?user_id=${user.id}`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
+      // Whether session just started or was already running, show QR modal
       setShowQRModal(true);
       startQRPolling(user.id);
     } catch (error) {

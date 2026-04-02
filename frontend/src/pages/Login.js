@@ -109,7 +109,7 @@ const Login = ({ setUser }) => {
           </form>
 
           <div className="text-center text-sm text-zinc-500">
-            <p>Default credentials: admin@revivalfitness.com / Admin@2026</p>
+            <p>Forgot your password? Contact your administrator.</p>
           </div>
         </div>
       </div>

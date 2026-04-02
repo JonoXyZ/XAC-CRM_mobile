@@ -9,7 +9,7 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Phone, Envelope, Tag, PencilSimple, CalendarPlus, SquaresFour, Table, Star, WhatsappLogo } from '@phosphor-icons/react';
+import { Plus, Phone, Envelope, Tag, PencilSimple, CalendarPlus, SquaresFour, Table, Star, WhatsappLogo, Trash } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -66,6 +66,20 @@ const Leads = ({ user }) => {
   const [whatsappMessage, setWhatsappMessage] = useState('');
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
 
+  const handleDeleteLead = async (lead) => {
+    if (!window.confirm(`Delete lead "${lead.name}"? This will also remove associated deals, activities, and appointments.`)) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API_URL}/api/leads/${lead.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Lead deleted');
+      fetchLeads();
+    } catch (error) {
+      toast.error('Failed to delete lead');
+    }
+  };
+
   useEffect(() => {
     fetchLeads();
     fetchUsers();
@@ -112,7 +126,13 @@ const Leads = ({ user }) => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/leads`, newLead, {
+      const payload = {
+        ...newLead,
+        email: newLead.email?.trim() || null,
+        surname: newLead.surname?.trim() || null,
+        notes: newLead.notes?.trim() || null,
+      };
+      await axios.post(`${API_URL}/api/leads`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
       toast.success('Lead created successfully');
@@ -422,6 +442,17 @@ const Leads = ({ user }) => {
                                     >
                                       <PencilSimple size={14} />
                                     </Button>
+                                    <Button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteLead(lead);
+                                      }}
+                                      data-testid={`delete-lead-${lead.id}`}
+                                      className="opacity-0 group-hover:opacity-100 p-1 h-auto bg-red-900 hover:bg-red-800"
+                                      title="Delete Lead"
+                                    >
+                                      <Trash size={14} />
+                                    </Button>
                                   </div>
                                 </div>
                                 <div className="space-y-1 text-xs text-zinc-400">
@@ -581,6 +612,14 @@ const Leads = ({ user }) => {
                           className="p-2 bg-cyan-500 hover:bg-cyan-600"
                         >
                           <CalendarPlus size={16} />
+                        </Button>
+                        <Button
+                          onClick={() => handleDeleteLead(lead)}
+                          data-testid={`table-delete-${lead.id}`}
+                          className="p-2 bg-red-900 hover:bg-red-800"
+                          title="Delete Lead"
+                        >
+                          <Trash size={16} />
                         </Button>
                       </div>
                     </td>

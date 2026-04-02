@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { Card } from '../components/ui/card';
-import { ChartBar, FileText, Image, TrendUp, Globe } from '@phosphor-icons/react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { ChartBar, FileText, Image, TrendUp, Globe, Question, ArrowRight } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -48,6 +49,19 @@ const MarketingDashboard = ({ user }) => {
           <p className="mt-2 text-base text-zinc-400">Form performance & lead generation overview</p>
         </div>
 
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList className="bg-zinc-900 border border-zinc-800">
+            <TabsTrigger value="overview" data-testid="overview-tab">
+              <ChartBar size={20} className="mr-2" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="howto" data-testid="howto-tab">
+              <Question size={20} className="mr-2" />
+              How-To Guide
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-6">
         {loading ? (
           <div className="text-center py-12 text-zinc-400">Loading stats...</div>
         ) : stats ? (
@@ -154,6 +168,92 @@ const MarketingDashboard = ({ user }) => {
         ) : (
           <div className="text-center py-12 text-zinc-500">Failed to load marketing stats.</div>
         )}
+          </TabsContent>
+
+          <TabsContent value="howto" className="space-y-6">
+            <Card className="stat-card p-6" data-testid="howto-card">
+              <h3 className="text-2xl font-bold text-zinc-100 mb-6">How to Use Marketing Tools</h3>
+              
+              <div className="space-y-6">
+                <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-lime-400 text-zinc-950 flex items-center justify-center font-bold text-sm">1</div>
+                    <div>
+                      <h4 className="font-bold text-zinc-100 mb-2">Create a Lead Capture Form</h4>
+                      <p className="text-sm text-zinc-400">
+                        Go to <strong>Forms</strong> in the sidebar. Click <strong>"Create Form"</strong>. 
+                        Give it a name, choose the platform (Facebook, Instagram, TikTok, or Website), 
+                        and add your questions (name, phone, email, etc.). Each form gets a unique webhook URL.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-lime-400 text-zinc-950 flex items-center justify-center font-bold text-sm">2</div>
+                    <div>
+                      <h4 className="font-bold text-zinc-100 mb-2">Connect to External Platforms</h4>
+                      <p className="text-sm text-zinc-400">
+                        Copy the <strong>Webhook URL</strong> shown on each form. Paste it into your Meta Lead Ad, 
+                        TikTok Lead Gen, or website contact form as the submission endpoint. When someone fills out 
+                        your ad form, the lead automatically appears in the CRM pipeline.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-lime-400 text-zinc-950 flex items-center justify-center font-bold text-sm">3</div>
+                    <div>
+                      <h4 className="font-bold text-zinc-100 mb-2">Webhook Payload Format</h4>
+                      <p className="text-sm text-zinc-400 mb-2">
+                        Send a POST request with JSON body to the webhook URL. Required fields:
+                      </p>
+                      <pre className="text-xs bg-zinc-900 p-3 rounded-md border border-zinc-800 text-lime-400 overflow-x-auto">
+{`{
+  "name": "John",
+  "surname": "Doe",
+  "email": "john@example.com",
+  "phone": "0712345678",
+  "answers": { "question1": "answer1" }
+}`}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-lime-400 text-zinc-950 flex items-center justify-center font-bold text-sm">4</div>
+                    <div>
+                      <h4 className="font-bold text-zinc-100 mb-2">Upload Media to Gallery</h4>
+                      <p className="text-sm text-zinc-400">
+                        Go to <strong>Gallery</strong> to upload images and videos for your marketing campaigns. 
+                        You can attach media to forms during creation. Supported formats: JPG, PNG, MP4, etc.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-lime-400 text-zinc-950 flex items-center justify-center font-bold text-sm">5</div>
+                    <div>
+                      <h4 className="font-bold text-zinc-100 mb-2">Monitor Performance</h4>
+                      <p className="text-sm text-zinc-400">
+                        Track leads, deals, and conversion rates per form on this dashboard. 
+                        The <strong>Form Performance</strong> table shows which forms are converting best 
+                        so you can optimize your ad spend.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </Layout>
   );

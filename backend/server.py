@@ -84,7 +84,7 @@ class UserResponse(BaseModel):
 class LeadCreate(BaseModel):
     name: str
     surname: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     phone: str
     source: str
     campaign: Optional[str] = None
@@ -327,11 +327,11 @@ async def create_lead(lead_data: LeadCreate, current_user: dict = Depends(get_cu
     
     lead_doc = {
         "name": lead_data.name,
-        "surname": lead_data.surname,
-        "email": lead_data.email,
+        "surname": lead_data.surname or None,
+        "email": lead_data.email or None,
         "phone": lead_data.phone,
         "source": lead_data.source,
-        "campaign": lead_data.campaign,
+        "campaign": lead_data.campaign or None,
         "stage": LeadStage.NEW_LEAD,
         "owner_id": str(consultant["_id"]) if consultant else None,
         "tags": lead_data.tags,
@@ -453,15 +453,56 @@ async def update_lead(lead_id: str, lead_update: LeadUpdate, current_user: dict 
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     
     if "stage" in update_data:
+        old_stage = lead["stage"]
+        new_stage = update_data["stage"]
+        
         await db.audit_logs.insert_one({
             "action": "stage_changed",
             "lead_id": lead_id,
             "user_id": str(current_user["_id"]),
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "details": {"from": lead["stage"], "to": update_data["stage"]}
+            "details": {"from": old_stage, "to": new_stage}
         })
+        
+        # If lead is moved OUT of Closed Won, delete associated deals (deduct from MTD sales)
+        if old_stage == LeadStage.CLOSED_WON and new_stage != LeadStage.CLOSED_WON:
+            deleted = await db.deals.delete_many({"lead_id": lead_id})
+            if deleted.deleted_count > 0:
+                await db.audit_logs.insert_one({
+                    "action": "deals_removed_stage_change",
+                    "lead_id": lead_id,
+                    "user_id": str(current_user["_id"]),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "details": {"deals_deleted": deleted.deleted_count, "reason": f"Lead moved from Closed Won to {new_stage}"}
+                })
     
     await db.leads.update_one({"_id": ObjectId(lead_id)}, {"$set": update_data})
+    
+    return {"success": True}
+
+
+@api_router.delete("/leads/{lead_id}")
+async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER, UserRole.CONSULTANT]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    lead = await db.leads.find_one({"_id": ObjectId(lead_id)})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    
+    # Delete associated deals, activities, appointments
+    await db.deals.delete_many({"lead_id": lead_id})
+    await db.activities.delete_many({"lead_id": lead_id})
+    await db.appointments.delete_many({"lead_id": lead_id})
+    await db.leads.delete_one({"_id": ObjectId(lead_id)})
+    
+    await db.audit_logs.insert_one({
+        "action": "lead_deleted",
+        "lead_id": lead_id,
+        "user_id": str(current_user["_id"]),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "details": {"lead_name": lead.get("name", "")}
+    })
     
     return {"success": True}
 
@@ -1370,8 +1411,11 @@ async def get_consultant_performance(current_user: dict = Depends(get_current_us
     
     return performance
 
+class GenerateReportRequest(BaseModel):
+    mode: str = "mtd_only"  # "mtd_only" or "start_new_month"
+
 @api_router.post("/reports/generate-month-report")
-async def generate_month_report(current_user: dict = Depends(get_current_user)):
+async def generate_month_report(report_req: GenerateReportRequest, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Only admins can generate month reports")
     
@@ -1424,21 +1468,32 @@ async def generate_month_report(current_user: dict = Depends(get_current_user)):
         "total_deals": len(report_data),
         "total_cash_sales": sum(d.get("sales_value", 0) or 0 for d in deals if d["payment_type"] == "Cash"),
         "total_debit_sales": sum(d.get("debit_order_value", 0) or 0 for d in deals if d["payment_type"] == "Debit Order"),
-        "total_units": sum(d.get("units", 0) or 0 for d in deals)
+        "total_units": sum(d.get("units", 0) or 0 for d in deals),
+        "mode": report_req.mode
     }
     
     await db.month_reports.insert_one(report_doc)
     
-    await db.leads.update_many(
-        {"stage": LeadStage.CLOSED_WON},
-        {"$set": {"stage": "Archived"}}
-    )
+    message = "MTD report generated"
+    
+    if report_req.mode == "start_new_month":
+        # Archive Closed Won leads
+        await db.leads.update_many(
+            {"stage": LeadStage.CLOSED_WON},
+            {"$set": {"stage": "Archived"}}
+        )
+        # Clear all deals for the period (reset sales totals)
+        await db.deals.delete_many({"lead_id": {"$in": lead_ids}})
+        # Reset commission goals for all consultants
+        await db.commission_goals.delete_many({"period_start": month_start})
+        message = "New month started. Deals archived, sales totals reset."
     
     return {
         "success": True,
-        "message": "Month report generated and deals cleared",
+        "message": message,
         "deals_count": len(report_data),
-        "period": f"{month_start} to {month_end}"
+        "period": f"{month_start} to {month_end}",
+        "mode": report_req.mode
     }
 
 @api_router.get("/reports/month-reports")
@@ -1720,6 +1775,161 @@ async def get_marketing_stats(current_user: dict = Depends(get_current_user)):
         "top_forms": top_forms[:10]
     }
 
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+import uuid as uuid_module
+
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+
+# ==========================================
+# AI Chat Assistant
+# ==========================================
+
+class AIChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+
+@api_router.post("/ai/chat")
+async def ai_chat(req: AIChatRequest, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can use AI assistant")
+    
+    session_id = req.session_id or str(uuid_module.uuid4())
+    
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=session_id,
+            system_message="You are the XAC CRM AI Assistant for Revival Fitness, a gym-focused CRM system. Help with CRM usage tips, sales strategies, lead management advice, WhatsApp messaging best practices, fitness industry marketing guidance, and troubleshooting CRM features. Be concise and professional."
+        )
+        chat.with_model("openai", "gpt-4o")
+        
+        user_message = UserMessage(text=req.message)
+        response = await chat.send_message(user_message)
+        
+        # Store in DB for persistence
+        await db.ai_chat_logs.insert_one({
+            "session_id": session_id,
+            "user_id": str(current_user["_id"]),
+            "user_message": req.message,
+            "ai_response": response,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        return {"response": response, "session_id": session_id}
+    except Exception as e:
+        logger.error(f"AI chat error: {e}")
+        raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
+
+@api_router.get("/ai/chat/history/{session_id}")
+async def get_ai_chat_history(session_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    logs = await db.ai_chat_logs.find({"session_id": session_id}).sort("created_at", 1).to_list(100)
+    return [
+        {
+            "user_message": log["user_message"],
+            "ai_response": log["ai_response"],
+            "created_at": log["created_at"]
+        }
+        for log in logs
+    ]
+
+# ==========================================
+# Global Password Reset + MASTER Account
+# ==========================================
+
+@api_router.post("/admin/reset-all-passwords")
+async def reset_all_passwords(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can reset passwords")
+    
+    new_password_hash = pwd_context.hash("123xyz/")
+    result = await db.users.update_many({}, {"$set": {"password": new_password_hash}})
+    
+    await db.audit_logs.insert_one({
+        "action": "global_password_reset",
+        "user_id": str(current_user["_id"]),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "details": {"users_affected": result.modified_count}
+    })
+    
+    return {"success": True, "users_reset": result.modified_count, "new_password": "123xyz/"}
+
+@api_router.post("/admin/create-master-account")
+async def create_master_account(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can create master accounts")
+    
+    existing = await db.users.find_one({"email": "mastergrey666@xac.com"})
+    if existing:
+        return {"success": True, "message": "MASTER account already exists", "id": str(existing["_id"])}
+    
+    master_doc = {
+        "email": "mastergrey666@xac.com",
+        "password": pwd_context.hash("MASTERGREY666"),
+        "name": "MASTERGREY666",
+        "role": UserRole.ADMIN,
+        "phone": "",
+        "active": True,
+        "linked_consultants": [],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.users.insert_one(master_doc)
+    
+    return {"success": True, "message": "MASTER account created", "id": str(result.inserted_id)}
+
+# ==========================================
+# Non-lead Appointments (Calendar standalone)
+# ==========================================
+
+class StandaloneAppointmentCreate(BaseModel):
+    name: str
+    surname: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    scheduled_at: str
+    notes: Optional[str] = None
+    appointment_type: Optional[str] = "general"
+
+@api_router.post("/appointments/standalone")
+async def create_standalone_appointment(data: StandaloneAppointmentCreate, current_user: dict = Depends(get_current_user)):
+    """Create an appointment without requiring an existing lead. Auto-creates a lead if needed."""
+    # Create a lead entry for tracking
+    lead_doc = {
+        "name": data.name,
+        "surname": data.surname,
+        "email": data.email or None,
+        "phone": data.phone or "",
+        "source": "Calendar",
+        "campaign": None,
+        "stage": LeadStage.APPOINTMENT_SET,
+        "owner_id": str(current_user["_id"]),
+        "tags": [],
+        "notes": data.notes,
+        "form_answers": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "last_contact": None
+    }
+    lead_result = await db.leads.insert_one(lead_doc)
+    lead_id = str(lead_result.inserted_id)
+    
+    appointment_doc = {
+        "lead_id": lead_id,
+        "scheduled_at": data.scheduled_at,
+        "notes": data.notes,
+        "appointment_type": data.appointment_type,
+        "booked_by": str(current_user["_id"]),
+        "created_by": str(current_user["_id"]),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "reminder_24h_sent": False,
+        "reminder_2h_sent": False
+    }
+    result = await db.appointments.insert_one(appointment_doc)
+    
+    return {"success": True, "appointment_id": str(result.inserted_id), "lead_id": lead_id}
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -1747,6 +1957,22 @@ async def startup_db():
         }
         await db.users.insert_one(admin_user)
         logger.info("Admin user created: admin@revivalfitness.com / Admin@2026")
+    
+    # Ensure MASTER account exists
+    master_exists = await db.users.find_one({"email": "mastergrey666@xac.com"})
+    if not master_exists:
+        master_user = {
+            "email": "mastergrey666@xac.com",
+            "password": pwd_context.hash("MASTERGREY666"),
+            "name": "MASTERGREY666",
+            "role": UserRole.ADMIN,
+            "phone": "",
+            "active": True,
+            "linked_consultants": [],
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.users.insert_one(master_user)
+        logger.info("MASTER account created: mastergrey666@xac.com / MASTERGREY666")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

@@ -4,18 +4,22 @@ import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Robot, PaperPlaneRight, Sparkle } from '@phosphor-icons/react';
+import axios from 'axios';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const EmergentFixes = ({ user }) => {
   const [messages, setMessages] = useState([
     {
       id: 1,
       type: 'assistant',
-      content: "👋 Hi! I'm your Emergent AI assistant. I can help you with:\n\n• Bug fixes and troubleshooting\n• Feature modifications\n• UI/UX improvements\n• Database queries\n• Code optimizations\n• Integration issues\n\nWhat would you like me to help with today?",
+      content: "Hi! I'm your XAC CRM AI Assistant. I can help you with:\n\n- CRM usage tips & best practices\n- Sales strategy advice\n- Lead management guidance\n- WhatsApp messaging templates\n- Fitness industry marketing tips\n- Troubleshooting CRM features\n\nWhat would you like help with?",
       timestamp: new Date().toISOString()
     }
   ]);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -28,7 +32,7 @@ const EmergentFixes = ({ user }) => {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!inputMessage.trim()) return;
+    if (!inputMessage.trim() || isTyping) return;
 
     const userMessage = {
       id: messages.length + 1,
@@ -37,21 +41,42 @@ const EmergentFixes = ({ user }) => {
       timestamp: new Date().toISOString()
     };
 
-    setMessages([...messages, userMessage]);
+    setMessages(prev => [...prev, userMessage]);
+    const msgText = inputMessage;
     setInputMessage('');
     setIsTyping(true);
 
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post(`${API_URL}/api/ai/chat`, {
+        message: msgText,
+        session_id: sessionId
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!sessionId) {
+        setSessionId(response.data.session_id);
+      }
+
       const aiResponse = {
         id: messages.length + 2,
         type: 'assistant',
-        content: "I've received your request. In a production environment, this would connect to the Emergent AI backend to process your request and provide real-time assistance.\n\nFor now, you can:\n1. Describe the issue or feature you need\n2. Include specific details (page names, error messages, etc.)\n3. Attach screenshots if needed\n\nI'll help you implement the fix or feature directly in your codebase!",
+        content: response.data.response,
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, aiResponse]);
+    } catch (error) {
+      const errorMsg = {
+        id: messages.length + 2,
+        type: 'assistant',
+        content: "Sorry, I encountered an error processing your request. Please try again.",
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   if (user?.role !== 'admin') {
@@ -61,7 +86,7 @@ const EmergentFixes = ({ user }) => {
           <div className="text-center py-12">
             <Robot size={64} className="mx-auto text-zinc-700 mb-4" />
             <h2 className="text-2xl font-bold text-zinc-400">Access Denied</h2>
-            <p className="text-zinc-500 mt-2">Only administrators can access Emergent Fixes</p>
+            <p className="text-zinc-500 mt-2">Only administrators can access the AI Assistant</p>
           </div>
         </div>
       </Layout>
@@ -79,9 +104,9 @@ const EmergentFixes = ({ user }) => {
               </div>
               <div>
                 <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-zinc-50" data-testid="emergent-fixes-title">
-                  Emergent AI Assistant
+                  AI Assistant
                 </h1>
-                <p className="text-sm text-zinc-400">Live fixes and development support</p>
+                <p className="text-sm text-zinc-400">Powered by GPT-4o</p>
               </div>
             </div>
           </div>
@@ -104,7 +129,7 @@ const EmergentFixes = ({ user }) => {
                     {message.type === 'assistant' && (
                       <div className="flex items-center gap-2 mb-2">
                         <Sparkle size={16} weight="fill" className="text-cyan-400" />
-                        <span className="text-xs font-semibold text-cyan-400">Emergent AI</span>
+                        <span className="text-xs font-semibold text-cyan-400">XAC AI</span>
                       </div>
                     )}
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -138,7 +163,7 @@ const EmergentFixes = ({ user }) => {
                 <Input
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  placeholder="Describe the issue or feature you need..."
+                  placeholder="Ask me anything about CRM, sales, or marketing..."
                   data-testid="chat-input"
                   className="flex-1 bg-zinc-950 border-zinc-800 text-zinc-50"
                 />

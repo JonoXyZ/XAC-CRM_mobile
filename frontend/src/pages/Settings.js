@@ -634,6 +634,10 @@ const Settings = ({ user }) => {
                   <Image size={20} className="mr-2" />
                   Branding
                 </TabsTrigger>
+                <TabsTrigger value="admin-tools" data-testid="admin-tools-tab">
+                  <ArrowsClockwise size={20} className="mr-2" />
+                  Admin Tools
+                </TabsTrigger>
               </>
             )}
           </TabsList>
@@ -1029,6 +1033,64 @@ const Settings = ({ user }) => {
                     </div>
                   </div>
                 )}
+              </div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="admin-tools" className="space-y-6">
+            <Card className="stat-card p-6" data-testid="admin-tools-card">
+              <h3 className="text-2xl font-semibold text-zinc-100 mb-6">Admin Tools</h3>
+              
+              <div className="space-y-4">
+                <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800">
+                  <h4 className="font-bold text-zinc-100 mb-2">Global Password Reset</h4>
+                  <p className="text-sm text-zinc-400 mb-4">
+                    Reset ALL user passwords to <code className="bg-zinc-800 px-2 py-0.5 rounded text-lime-400">123xyz/</code>. 
+                    This affects every user in the system.
+                  </p>
+                  <Button
+                    onClick={async () => {
+                      if (!window.confirm('WARNING: This will reset ALL user passwords to "123xyz/". Are you sure?')) return;
+                      try {
+                        const token = localStorage.getItem('token');
+                        const res = await axios.post(`${API_URL}/api/admin/reset-all-passwords`, {}, {
+                          headers: { Authorization: `Bearer ${token}` }
+                        });
+                        toast.success(`Passwords reset for ${res.data.users_reset} users`);
+                      } catch (error) {
+                        toast.error('Failed to reset passwords');
+                      }
+                    }}
+                    data-testid="global-reset-button"
+                    className="bg-red-600 text-white font-bold hover:bg-red-700"
+                  >
+                    Reset All Passwords
+                  </Button>
+                </div>
+
+                <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800">
+                  <h4 className="font-bold text-zinc-100 mb-2">MASTER Account</h4>
+                  <p className="text-sm text-zinc-400 mb-4">
+                    Create or verify the MASTERGREY666 super admin account.
+                  </p>
+                  <Button
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem('token');
+                        const res = await axios.post(`${API_URL}/api/admin/create-master-account`, {}, {
+                          headers: { Authorization: `Bearer ${token}` }
+                        });
+                        toast.success(res.data.message);
+                      } catch (error) {
+                        toast.error('Failed to create master account');
+                      }
+                    }}
+                    data-testid="create-master-button"
+                    className="bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+                  >
+                    Create / Verify MASTER Account
+                  </Button>
+                </div>
               </div>
             </Card>
           </TabsContent>

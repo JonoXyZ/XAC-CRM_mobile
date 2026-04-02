@@ -21,7 +21,13 @@ if (!fs.existsSync(AUTH_DIR)) {
 
 async function startSession(userId) {
     if (sessions.has(userId)) {
-        return { success: false, message: 'Session already running' };
+        const existingSock = sessions.get(userId);
+        if (existingSock && existingSock.user) {
+            return { success: true, message: 'Session already connected' };
+        }
+        // Session exists but not connected - clean up stale session
+        sessions.delete(userId);
+        qrCodes.delete(userId);
     }
 
     try {
