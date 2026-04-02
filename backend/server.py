@@ -1109,9 +1109,242 @@ async def send_whatsapp(message: WhatsAppMessageRequest, current_user: dict = De
     })
     
     if result.get("success"):
+        # Check if the message contains .appointment trigger (CRM-sent messages)
+        if message_text.strip().lower().startswith('.appointment'):
+            try:
+                # Get lead's phone number for matching
+                lead_phone = message.phone_number
+                await process_appointment_trigger(user_id, lead_phone, message_text)
+            except Exception as e:
+                logger.error(f"Auto-appointment from CRM send failed: {e}")
+        
         return {"success": True, "message": "Message sent successfully"}
     else:
         raise HTTPException(status_code=500, detail=result.get("message", "Failed to send message"))
+
+# ==========================================
+# Auto-Appointment from WhatsApp Trigger
+# ==========================================
+
+import re as regex_module
+
+def parse_appointment_message(text: str):
+    """Parse .appointment trigger message into structured data."""
+    lines = text.strip().split('\n')
+    data = {
+        'client_name': None,
+        'date': None,
+        'time': None,
+        'appointment_type': 'consultation'
+    }
+    
+    # First line: ".appointment set for Client Name" or ".appointment Client Name"
+    first_line = lines[0].strip()
+    # Extract client name from first line
+    name_match = regex_module.search(r'\.appointment\s+(?:set\s+for\s+)?(.+)', first_line, regex_module.IGNORECASE)
+    if name_match:
+        data['client_name'] = name_match.group(1).strip()
+    
+    for line in lines[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Date: 2026-04-05 or Date: 5 April 2026 etc.
+        date_match = regex_module.match(r'date\s*:\s*(.+)', line, regex_module.IGNORECASE)
+        if date_match:
+            date_str = date_match.group(1).strip()
+            # Try parsing various date formats
+            for fmt in ['%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%d %B %Y', '%d %b %Y', '%B %d %Y', '%b %d %Y']:
+                try:
+                    parsed = datetime.strptime(date_str, fmt)
+                    data['date'] = parsed.strftime('%Y-%m-%d')
+                    break
+                except ValueError:
+                    continue
+            if not data['date']:
+                data['date'] = date_str
+        
+        # Time: 10:00 or Time: 10am etc.
+        time_match = regex_module.match(r'time\s*:\s*(.+)', line, regex_module.IGNORECASE)
+        if time_match:
+            time_str = time_match.group(1).strip()
+            # Handle 10:00, 10am, 2pm, 14:30 etc.
+            t_match = regex_module.match(r'(\d{1,2})[:\.]?(\d{2})?\s*(am|pm)?', time_str, regex_module.IGNORECASE)
+            if t_match:
+                hour = int(t_match.group(1))
+                minute = int(t_match.group(2) or 0)
+                ampm = (t_match.group(3) or '').lower()
+                if ampm == 'pm' and hour < 12:
+                    hour += 12
+                elif ampm == 'am' and hour == 12:
+                    hour = 0
+                data['time'] = f'{hour:02d}:{minute:02d}'
+            else:
+                data['time'] = time_str
+        
+        # For: Tour/Consultation/Free Trial
+        for_match = regex_module.match(r'for\s*:\s*(.+)', line, regex_module.IGNORECASE)
+        if for_match:
+            apt_type = for_match.group(1).strip().lower()
+            type_map = {
+                'tour': 'tour',
+                'gym tour': 'tour',
+                'consultation': 'consultation',
+                'consult': 'consultation',
+                'free trial': 'trial',
+                'trial': 'trial',
+                'follow up': 'follow_up',
+                'follow-up': 'follow_up',
+                'followup': 'follow_up'
+            }
+            data['appointment_type'] = type_map.get(apt_type, 'general')
+    
+    return data
+
+async def process_appointment_trigger(consultant_user_id: str, chat_phone: str, message_text: str):
+    """Process .appointment trigger: match lead, create appointment, schedule confirmation."""
+    parsed = parse_appointment_message(message_text)
+    
+    if not parsed['date'] or not parsed['time']:
+        logger.warning(f"Auto-appointment parse failed - missing date/time: {parsed}")
+        return
+    
+    # Clean up the phone number for matching
+    clean_phone = chat_phone.replace('+', '').replace(' ', '').replace('-', '')
+    # Also create the local format (for SA: 27xxx -> 0xxx)
+    local_phone = clean_phone
+    if clean_phone.startswith('27') and len(clean_phone) > 9:
+        local_phone = '0' + clean_phone[2:]
+    
+    # Try to find the lead by phone number first
+    lead = await db.leads.find_one({
+        "$or": [
+            {"phone": {"$regex": clean_phone[-9:]}},  # Match last 9 digits
+            {"phone": local_phone},
+            {"phone": clean_phone},
+            {"phone": "+" + clean_phone}
+        ]
+    })
+    
+    # Also try matching by client name if provided and lead not found
+    if not lead and parsed['client_name']:
+        name_parts = parsed['client_name'].split()
+        if len(name_parts) >= 1:
+            lead = await db.leads.find_one({
+                "name": {"$regex": name_parts[0], "$options": "i"}
+            })
+    
+    # If still no lead, create one
+    if not lead:
+        lead_doc = {
+            "name": parsed['client_name'] or "WhatsApp Appointment",
+            "surname": None,
+            "email": None,
+            "phone": local_phone or chat_phone,
+            "source": "WhatsApp",
+            "campaign": None,
+            "stage": LeadStage.APPOINTMENT_SET,
+            "owner_id": consultant_user_id,
+            "tags": ["auto-appointment"],
+            "notes": f"Auto-created from WhatsApp .appointment trigger",
+            "form_answers": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "last_contact": datetime.now(timezone.utc).isoformat()
+        }
+        result = await db.leads.insert_one(lead_doc)
+        lead = lead_doc
+        lead["_id"] = result.inserted_id
+        logger.info(f"Auto-created lead for appointment: {parsed['client_name']}")
+    else:
+        # Update stage to Appointment Set
+        await db.leads.update_one(
+            {"_id": lead["_id"]},
+            {"$set": {"stage": LeadStage.APPOINTMENT_SET, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+    
+    lead_id = str(lead["_id"])
+    scheduled_at = f"{parsed['date']}T{parsed['time']}:00"
+    
+    # Create the appointment
+    appointment_doc = {
+        "lead_id": lead_id,
+        "scheduled_at": scheduled_at,
+        "notes": f"Auto-booked via WhatsApp | Type: {parsed['appointment_type']}",
+        "appointment_type": parsed['appointment_type'],
+        "booked_by": consultant_user_id,
+        "created_by": consultant_user_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "reminder_24h_sent": False,
+        "reminder_2h_sent": False,
+        "auto_created": True
+    }
+    apt_result = await db.appointments.insert_one(appointment_doc)
+    
+    # Log the activity
+    await db.activities.insert_one({
+        "lead_id": lead_id,
+        "user_id": consultant_user_id,
+        "activity_type": "appointment_auto_created",
+        "content": f"Appointment auto-scheduled via WhatsApp: {parsed['appointment_type']} on {parsed['date']} at {parsed['time']}",
+        "notes": message_text,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    # Schedule 30-minute delayed confirmation via WhatsApp
+    consultant = await db.users.find_one({"_id": ObjectId(consultant_user_id)})
+    consultant_name = consultant["name"] if consultant else "Your consultant"
+    client_name = lead.get("name", parsed.get("client_name", ""))
+    
+    type_labels = {
+        'tour': 'Gym Tour',
+        'consultation': 'Consultation', 
+        'trial': 'Free Trial',
+        'follow_up': 'Follow-up',
+        'general': 'Appointment'
+    }
+    type_label = type_labels.get(parsed['appointment_type'], 'Appointment')
+    
+    confirmation_msg = (
+        f"Hi {client_name}, your {type_label} has been confirmed!\n\n"
+        f"Date: {parsed['date']}\n"
+        f"Time: {parsed['time']}\n"
+        f"With: {consultant_name}\n\n"
+        f"We look forward to seeing you! Reply to this message if you need to reschedule."
+    )
+    
+    # Send delayed confirmation (30 minutes = 1800000 ms)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(f"{WHATSAPP_SERVICE_URL}/send-delayed-confirmation", json={
+                "userId": consultant_user_id,
+                "phoneNumber": chat_phone,
+                "message": confirmation_msg,
+                "delayMs": 30 * 60 * 1000  # 30 minutes
+            })
+        logger.info(f"Confirmation scheduled for {client_name} at {chat_phone} in 30 minutes")
+    except Exception as e:
+        logger.error(f"Failed to schedule confirmation: {e}")
+    
+    logger.info(f"Auto-appointment created: {client_name} - {parsed['appointment_type']} on {parsed['date']} {parsed['time']}")
+    return str(apt_result.inserted_id)
+
+class AutoAppointmentRequest(BaseModel):
+    user_id: str
+    chat_phone: str
+    message_text: str
+    from_me: bool = False
+
+@api_router.post("/whatsapp/auto-appointment")
+async def whatsapp_auto_appointment(req: AutoAppointmentRequest):
+    """Called by WhatsApp Node service when .appointment trigger is detected in a chat."""
+    try:
+        result = await process_appointment_trigger(req.user_id, req.chat_phone, req.message_text)
+        return {"success": True, "appointment_id": result}
+    except Exception as e:
+        logger.error(f"Auto-appointment endpoint error: {e}")
+        return {"success": False, "error": str(e)}
 
 @api_router.get("/whatsapp/status")
 async def whatsapp_status(current_user: dict = Depends(get_current_user)):

@@ -4,14 +4,17 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 
 const app = express();
 app.use(express.json());
 
 const PORT = 3001;
+const BACKEND_URL = 'http://localhost:8001/api';
 const sessions = new Map();
 const qrCodes = new Map();
 const logger = pino({ level: 'info' });
+const confirmationTimers = new Map(); // Track 30-min delayed confirmations
 
 // Ensure auth_info directory exists
 const AUTH_DIR = path.join(__dirname, 'auth_info');
@@ -75,6 +78,42 @@ async function startSession(userId) {
             } else if (connection === 'open') {
                 logger.info(`WhatsApp connected for user ${userId}`);
                 qrCodes.delete(userId);
+            }
+        });
+
+        // Listen for incoming/outgoing messages to detect .appointment trigger
+        sock.ev.on('messages.upsert', async (m) => {
+            if (!m.messages || m.messages.length === 0) return;
+            
+            for (const msg of m.messages) {
+                // Get message text from various message types
+                const text = msg.message?.conversation 
+                    || msg.message?.extendedTextMessage?.text 
+                    || '';
+                
+                if (!text) continue;
+                
+                // Check for .appointment trigger (case-insensitive)
+                if (text.toLowerCase().startsWith('.appointment')) {
+                    const chatJid = msg.key.remoteJid;
+                    // Extract phone number from JID (remove @s.whatsapp.net)
+                    const chatPhone = chatJid ? chatJid.replace('@s.whatsapp.net', '').replace('@g.us', '') : '';
+                    const fromMe = msg.key.fromMe || false;
+                    
+                    logger.info(`Appointment trigger detected from user ${userId} in chat ${chatPhone}`);
+                    
+                    try {
+                        await axios.post(`${BACKEND_URL}/whatsapp/auto-appointment`, {
+                            user_id: userId,
+                            chat_phone: chatPhone,
+                            message_text: text,
+                            from_me: fromMe
+                        });
+                        logger.info(`Auto-appointment request sent for user ${userId}`);
+                    } catch (error) {
+                        logger.error(`Failed to create auto-appointment: ${error?.message || error}`);
+                    }
+                }
             }
         });
 
@@ -202,6 +241,30 @@ app.post('/send-message', async (req, res) => {
     
     const result = await sendMessage(userId, phoneNumber, message);
     res.json(result);
+});
+
+// Delayed confirmation message (called by backend after 30 min)
+app.post('/send-delayed-confirmation', async (req, res) => {
+    const { userId, phoneNumber, message, delayMs } = req.body;
+    
+    if (!userId || !phoneNumber || !message) {
+        return res.status(400).json({ error: 'userId, phoneNumber, and message are required' });
+    }
+    
+    const delay = delayMs || (30 * 60 * 1000); // Default 30 minutes
+    const timerId = `${userId}-${phoneNumber}-${Date.now()}`;
+    
+    logger.info(`Scheduling confirmation to ${phoneNumber} in ${delay/1000}s`);
+    
+    const timer = setTimeout(async () => {
+        const result = await sendMessage(userId, phoneNumber, message);
+        logger.info(`Delayed confirmation sent to ${phoneNumber}: ${result.success ? 'OK' : result.message}`);
+        confirmationTimers.delete(timerId);
+    }, delay);
+    
+    confirmationTimers.set(timerId, timer);
+    
+    res.json({ success: true, message: `Confirmation scheduled in ${delay/1000} seconds`, timerId });
 });
 
 app.post('/logout', async (req, res) => {

@@ -49,12 +49,16 @@ Build "XAC CRM" – a full-stack gym-focused CRM for Revival Fitness. Key goals 
 ### Phase 2 (Integrations & Tools)
 - [x] WhatsApp multi-session integration (Baileys)
 - [x] WhatsApp pair mapping in User Management
-- [x] **WhatsApp stale session cleanup** (fixes "FAILED TO LOAD" error)
+- [x] WhatsApp stale session cleanup (fixes "FAILED TO LOAD" error)
+- [x] WhatsApp phone number formatting (SA local → international)
+- [x] WhatsApp `.appointment` trigger — auto-schedules appointments from chat messages
+- [x] 30-minute delayed WhatsApp confirmation after auto-booking
+- [x] Incoming message listener for `.appointment` detection (direct phone messages)
 - [x] AI Writing Assistant for message templates
-- [x] **AI Chat Assistant** (GPT-4o via Emergent LLM Key) on Emergent Fixes page
+- [x] AI Chat Assistant (GPT-4o via Emergent LLM Key) on Emergent Fixes page
 - [x] White-label branding (dynamic logo, company name, colors)
 - [x] Marketing Agent portal (forms, webhooks, media gallery)
-- [x] **Marketing How-To Guide** tab
+- [x] Marketing How-To Guide tab
 
 ### Phase 3 (Admin Tools & Reports)
 - [x] **Month-End Report overhaul** (MTD Only vs Start New Month)
