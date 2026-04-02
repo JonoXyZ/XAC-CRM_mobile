@@ -46,7 +46,7 @@ const Leads = ({ user }) => {
   const [dealData, setDealData] = useState({
     payment_type: 'Cash',
     deal_date: new Date().toISOString().split('T')[0],
-    closed_by: user?.id || '',
+    closed_by: '',
     to_by: '',
     sales_value: '',
     term: '',
@@ -269,7 +269,7 @@ const Leads = ({ user }) => {
       setDealData({
         ...dealData,
         payment_type: 'Cash',
-        closed_by: user?.id || '',
+        closed_by: lead.owner_id || user?.id || '',
         to_by: lead.owner_id || ''
       });
       setShowDealModal(true);
@@ -887,6 +887,25 @@ const Leads = ({ user }) => {
                       className="bg-zinc-950 border-zinc-800 text-zinc-50"
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Closed By (Commission)</Label>
+                    <Select
+                      value={dealData.closed_by}
+                      onValueChange={(value) => setDealData({ ...dealData, closed_by: value })}
+                      data-testid="closed-by-select"
+                    >
+                      <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50">
+                        <SelectValue placeholder="Select consultant" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-zinc-900 border-zinc-800">
+                        {users.map(u => (
+                          <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">T/O By</Label>
                     <Select
