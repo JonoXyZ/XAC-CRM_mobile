@@ -264,7 +264,8 @@ const Settings = ({ user }) => {
     password: '',
     role: 'consultant',
     phone: '',
-    active: true
+    active: true,
+    linked_consultants: []
   });
   // WhatsApp session management state
   const [waSessionStatus, setWaSessionStatus] = useState({});
@@ -473,7 +474,7 @@ const Settings = ({ user }) => {
       });
       toast.success('User created successfully');
       setShowAddUserModal(false);
-      setNewUser({ name: '', email: '', password: '', role: 'consultant', phone: '', active: true });
+      setNewUser({ name: '', email: '', password: '', role: 'consultant', phone: '', active: true, linked_consultants: [] });
       fetchUsers();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to create user');
@@ -503,7 +504,8 @@ const Settings = ({ user }) => {
         name: selectedUser.name,
         email: selectedUser.email,
         phone: selectedUser.phone,
-        role: selectedUser.role
+        role: selectedUser.role,
+        linked_consultants: selectedUser.linked_consultants || []
       };
       if (selectedUser.password) {
         updates.password = selectedUser.password;
@@ -798,6 +800,19 @@ const Settings = ({ user }) => {
                             <span className="text-xs text-red-500">Inactive</span>
                           )}
                         </div>
+                        {u.role === 'assistant' && u.linked_consultants && u.linked_consultants.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5" data-testid={`linked-badges-${u.id}`}>
+                            <span className="text-xs text-zinc-500">Linked to:</span>
+                            {u.linked_consultants.map(lcId => {
+                              const linkedUser = users.find(usr => usr.id === lcId);
+                              return linkedUser ? (
+                                <span key={lcId} className="text-xs bg-lime-400/15 text-lime-400 px-2 py-0.5 rounded-full">
+                                  {linkedUser.name}
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1166,6 +1181,48 @@ const Settings = ({ user }) => {
                 </SelectContent>
               </Select>
             </div>
+            {newUser.role === 'assistant' && (
+              <div className="space-y-2" data-testid="linked-consultants-section">
+                <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">
+                  Link to Consultants / Managers
+                </Label>
+                <p className="text-xs text-zinc-500 mb-2">
+                  Select which consultants or managers this assistant can access leads and appointments for.
+                </p>
+                <div className="max-h-48 overflow-y-auto space-y-1 p-3 bg-zinc-950 rounded-md border border-zinc-800">
+                  {users
+                    .filter(u => ['consultant', 'sales_manager', 'club_manager'].includes(u.role) && u.active)
+                    .map(u => (
+                      <label
+                        key={u.id}
+                        className="flex items-center gap-3 p-2 rounded hover:bg-zinc-900 cursor-pointer"
+                        data-testid={`link-user-${u.id}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={(newUser.linked_consultants || []).includes(u.id)}
+                          onChange={(e) => {
+                            const linked = newUser.linked_consultants || [];
+                            if (e.target.checked) {
+                              setNewUser({ ...newUser, linked_consultants: [...linked, u.id] });
+                            } else {
+                              setNewUser({ ...newUser, linked_consultants: linked.filter(id => id !== u.id) });
+                            }
+                          }}
+                          className="rounded border-zinc-700 bg-zinc-950 text-lime-400 focus:ring-lime-400"
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-zinc-200">{u.name}</span>
+                          <span className="ml-2 text-xs text-zinc-500 capitalize">({u.role.replace('_', ' ')})</span>
+                        </div>
+                      </label>
+                    ))}
+                  {users.filter(u => ['consultant', 'sales_manager', 'club_manager'].includes(u.role) && u.active).length === 0 && (
+                    <p className="text-xs text-zinc-500 text-center py-2">No consultants or managers found</p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="flex gap-3">
               <Button
                 type="button"
@@ -1256,6 +1313,60 @@ const Settings = ({ user }) => {
                     </SelectContent>
                   </Select>
                 </div>
+                {selectedUser.role === 'assistant' && (
+                  <div className="space-y-2" data-testid="edit-linked-consultants-section">
+                    <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">
+                      Link to Consultants / Managers
+                    </Label>
+                    <p className="text-xs text-zinc-500 mb-2">
+                      Select which consultants or managers this assistant can access leads and appointments for.
+                    </p>
+                    <div className="max-h-48 overflow-y-auto space-y-1 p-3 bg-zinc-950 rounded-md border border-zinc-800">
+                      {users
+                        .filter(u => ['consultant', 'sales_manager', 'club_manager'].includes(u.role) && u.active && u.id !== selectedUser.id)
+                        .map(u => (
+                          <label
+                            key={u.id}
+                            className="flex items-center gap-3 p-2 rounded hover:bg-zinc-900 cursor-pointer"
+                            data-testid={`edit-link-user-${u.id}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={(selectedUser.linked_consultants || []).includes(u.id)}
+                              onChange={(e) => {
+                                const linked = selectedUser.linked_consultants || [];
+                                if (e.target.checked) {
+                                  setSelectedUser({ ...selectedUser, linked_consultants: [...linked, u.id] });
+                                } else {
+                                  setSelectedUser({ ...selectedUser, linked_consultants: linked.filter(id => id !== u.id) });
+                                }
+                              }}
+                              className="rounded border-zinc-700 bg-zinc-950 text-lime-400 focus:ring-lime-400"
+                            />
+                            <div>
+                              <span className="text-sm font-medium text-zinc-200">{u.name}</span>
+                              <span className="ml-2 text-xs text-zinc-500 capitalize">({u.role.replace('_', ' ')})</span>
+                            </div>
+                          </label>
+                        ))}
+                      {users.filter(u => ['consultant', 'sales_manager', 'club_manager'].includes(u.role) && u.active && u.id !== selectedUser.id).length === 0 && (
+                        <p className="text-xs text-zinc-500 text-center py-2">No consultants or managers found</p>
+                      )}
+                    </div>
+                    {(selectedUser.linked_consultants || []).length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {(selectedUser.linked_consultants || []).map(lcId => {
+                          const linkedUser = users.find(u => u.id === lcId);
+                          return linkedUser ? (
+                            <span key={lcId} className="text-xs bg-lime-400/20 text-lime-400 px-2 py-1 rounded-full">
+                              {linkedUser.name}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex gap-3">
                   <Button
                     type="button"
