@@ -1875,6 +1875,7 @@ async def delete_form(form_id: str, current_user: dict = Depends(get_current_use
 META_VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN", "xac_crm_meta_verify")
 
 from fastapi.responses import PlainTextResponse
+from starlette.requests import Request as StarletteRequest
 
 @api_router.get("/webhooks/meta", response_class=PlainTextResponse)
 async def meta_webhook_verify(request: Request):
@@ -1884,12 +1885,30 @@ async def meta_webhook_verify(request: Request):
     token = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
     
+    logger.info(f"Meta verify request: mode={mode}, token_match={token == META_VERIFY_TOKEN}, challenge={challenge}")
+    
     if mode == "subscribe" and token == META_VERIFY_TOKEN:
         logger.info("Meta webhook verified successfully")
-        return PlainTextResponse(content=challenge, status_code=200)
+        return PlainTextResponse(content=str(challenge), status_code=200)
     
     logger.warning(f"Meta webhook verification failed: mode={mode}, token={token}")
     raise HTTPException(status_code=403, detail="Verification failed")
+
+# Also mount at app level (without /api prefix) as Meta may call either path
+@app.get("/webhooks/meta", response_class=PlainTextResponse)
+async def meta_webhook_verify_root(request: Request):
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+    
+    if mode == "subscribe" and token == META_VERIFY_TOKEN:
+        return PlainTextResponse(content=str(challenge), status_code=200)
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+@app.post("/webhooks/meta")
+async def meta_webhook_receive_root(payload: Dict[str, Any]):
+    return await meta_webhook_receive(payload)
 
 @api_router.post("/webhooks/meta")
 async def meta_webhook_receive(payload: Dict[str, Any]):
