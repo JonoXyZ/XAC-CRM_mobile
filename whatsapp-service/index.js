@@ -98,8 +98,20 @@ async function sendMessage(userId, phoneNumber, message) {
     }
 
     try {
-        // Format phone number (remove + and spaces, add @s.whatsapp.net)
-        const formattedNumber = phoneNumber.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
+        // Format phone number to international WhatsApp format
+        let cleaned = phoneNumber.replace(/[^0-9+]/g, '');
+        
+        // Handle + prefix
+        if (cleaned.startsWith('+')) {
+            cleaned = cleaned.substring(1);
+        }
+        
+        // Handle South African local numbers (starting with 0) -> add country code 27
+        if (cleaned.startsWith('0') && cleaned.length === 10) {
+            cleaned = '27' + cleaned.substring(1);
+        }
+        
+        const formattedNumber = cleaned + '@s.whatsapp.net';
         
         logger.info(`Attempting to send message from ${userId} to ${formattedNumber}`);
         await sock.sendMessage(formattedNumber, { text: message });
