@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Header, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Header, UploadFile, File, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -1867,6 +1867,133 @@ async def delete_form(form_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=403, detail="Access denied")
     await db.forms.delete_one({"_id": ObjectId(form_id)})
     return {"success": True}
+
+# ==========================================
+# Meta / Facebook Lead Ads Webhook
+# ==========================================
+
+META_VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN", "xac_crm_meta_verify")
+
+from fastapi.responses import PlainTextResponse
+
+@api_router.get("/webhooks/meta", response_class=PlainTextResponse)
+async def meta_webhook_verify(request: Request):
+    """Meta webhook verification - responds to hub.challenge for subscription setup."""
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+    
+    if mode == "subscribe" and token == META_VERIFY_TOKEN:
+        logger.info("Meta webhook verified successfully")
+        return PlainTextResponse(content=challenge, status_code=200)
+    
+    logger.warning(f"Meta webhook verification failed: mode={mode}, token={token}")
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+@api_router.post("/webhooks/meta")
+async def meta_webhook_receive(payload: Dict[str, Any]):
+    """Receive lead data from Meta Lead Ads (Facebook/Instagram)."""
+    logger.info(f"Meta webhook received: {payload}")
+    
+    # Store raw webhook for debugging
+    await db.webhook_logs.insert_one({
+        "source": "meta",
+        "payload": payload,
+        "received_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    try:
+        # Meta sends data in the format: { "entry": [{ "changes": [{ "value": { "leadgen_id": ..., "field_data": [...] } }] }] }
+        entries = payload.get("entry", [])
+        leads_created = 0
+        
+        for entry in entries:
+            changes = entry.get("changes", [])
+            for change in changes:
+                value = change.get("value", {})
+                
+                # Extract lead data from field_data array
+                field_data = value.get("field_data", [])
+                lead_fields = {}
+                for field in field_data:
+                    fname = field.get("name", "").lower()
+                    fvalues = field.get("values", [])
+                    fval = fvalues[0] if fvalues else ""
+                    lead_fields[fname] = fval
+                
+                # Also handle direct payload format (from Zapier, Make, etc.)
+                if not lead_fields:
+                    lead_fields = {
+                        "name": payload.get("name") or payload.get("full_name") or payload.get("first_name", ""),
+                        "surname": payload.get("surname") or payload.get("last_name", ""),
+                        "email": payload.get("email", ""),
+                        "phone": payload.get("phone") or payload.get("phone_number", ""),
+                    }
+                
+                name = lead_fields.get("full_name") or lead_fields.get("first_name") or lead_fields.get("name", "Facebook Lead")
+                surname = lead_fields.get("last_name") or lead_fields.get("surname", "")
+                email = lead_fields.get("email", "") or None
+                phone = lead_fields.get("phone_number") or lead_fields.get("phone", "")
+                
+                consultant = await get_next_consultant_for_assignment()
+                
+                lead_doc = {
+                    "name": name,
+                    "surname": surname or None,
+                    "email": email or None,
+                    "phone": phone,
+                    "source": "Facebook Lead Ad",
+                    "campaign": value.get("form_id") or payload.get("campaign", "Meta"),
+                    "stage": LeadStage.NEW_LEAD,
+                    "owner_id": str(consultant["_id"]) if consultant else None,
+                    "tags": ["meta", "auto-captured"],
+                    "notes": f"Leadgen ID: {value.get('leadgen_id', 'N/A')}",
+                    "form_answers": lead_fields,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "last_contact": None
+                }
+                
+                result = await db.leads.insert_one(lead_doc)
+                leads_created += 1
+                logger.info(f"Meta lead created: {name} {surname} - {phone}")
+        
+        # If no entries format, try flat payload (from Make/Zapier direct)
+        if leads_created == 0 and (payload.get("name") or payload.get("first_name") or payload.get("full_name")):
+            name = payload.get("name") or payload.get("full_name") or payload.get("first_name", "Lead")
+            surname = payload.get("surname") or payload.get("last_name", "")
+            email = payload.get("email", "") or None
+            phone = payload.get("phone") or payload.get("phone_number", "")
+            
+            consultant = await get_next_consultant_for_assignment()
+            
+            lead_doc = {
+                "name": name,
+                "surname": surname or None,
+                "email": email or None,
+                "phone": phone,
+                "source": "Facebook Lead Ad",
+                "campaign": payload.get("campaign", payload.get("form_name", "Meta")),
+                "stage": LeadStage.NEW_LEAD,
+                "owner_id": str(consultant["_id"]) if consultant else None,
+                "tags": ["meta", "auto-captured"],
+                "notes": "",
+                "form_answers": payload,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "last_contact": None
+            }
+            
+            result = await db.leads.insert_one(lead_doc)
+            leads_created += 1
+            logger.info(f"Meta flat lead created: {name}")
+        
+        return {"success": True, "leads_created": leads_created}
+    
+    except Exception as e:
+        logger.error(f"Meta webhook processing error: {e}")
+        return {"success": False, "error": str(e)}
 
 # Webhook endpoint for receiving leads from forms
 @api_router.post("/webhooks/form/{form_id}")
