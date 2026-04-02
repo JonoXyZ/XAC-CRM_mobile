@@ -1,75 +1,92 @@
 # XAC CRM - Product Requirements Document
 
-## Original Problem Statement
-Build "XAC CRM" – a full-stack gym-focused CRM for Revival Fitness. Key goals include capturing leads (Meta/Website/Manual), round-robin assignment, multi-role access (Admin, Club Manager, Sales Manager, Consultants, Assistants, Marketing Agent), WhatsApp automation (Baileys), appointments scheduling, comprehensive sales/KPI dashboards, deals tracking (Cash/Debit Order), commission management, form-based lead capture, and Admin settings.
+## Problem Statement
+Build "XAC CRM" – a full-stack gym-focused CRM for Revival Fitness. Key goals include capturing leads (Meta/Website/Manual), round-robin assignment, multi-role access (Admin, Club Manager, Sales Manager, Consultants, Assistants, Marketing Agent), WhatsApp automation (Baileys/Puppeteer), appointments scheduling, comprehensive sales/KPI dashboards, deals tracking (Cash/Debit Order), commissions management, and an Admin settings backdoor.
 
-## Architecture
-- **Frontend**: React + Tailwind CSS + Shadcn UI (port 3000)
-- **Backend**: FastAPI + Motor (async MongoDB) (port 8001)
-- **WhatsApp Service**: Node.js + Express + @whiskeysockets/baileys (port 3001)
-- **Database**: MongoDB (xac_crm_db)
-- **Collections**: users, leads, activities, deals, settings, appointments, audit_logs, message_logs, month_reports, message_templates, commission_goals, forms, media
+## Tech Stack
+- **Frontend**: React, Tailwind CSS, Shadcn UI, Phosphor Icons, BrandingContext
+- **Backend**: FastAPI, Motor (async MongoDB driver), Passlib (bcrypt)
+- **WhatsApp Service**: Node.js, @whiskeysockets/baileys (port 3001)
+- **AI**: OpenAI GPT-4o via Emergent LLM Key (emergentintegrations library)
+- **Database**: MongoDB
+
+## Core Architecture
+```
+/app/
+├── backend/server.py          # FastAPI main app (all endpoints)
+├── frontend/src/
+│   ├── App.js                 # React routes + BrandingContext
+│   ├── components/            # Layout, WhatsAppManagement, EarningsScaleEditor
+│   ├── pages/                 # Dashboard, Leads, Settings, Commission, etc.
+│   └── index.css              # Global styles
+├── whatsapp-service/index.js  # Node.js Baileys multi-session service
+└── memory/                    # PRD, test credentials
+```
 
 ## Roles
-- **Admin**: Full access to all features + settings
-- **Sales Manager**: Dashboard, Leads, Appointments, Reports, Analytics
-- **Club Manager**: Dashboard, Leads, Appointments, Gallery
-- **Consultant**: Dashboard, Leads, Appointments, Commission
-- **Assistant**: Dashboard (appointment-focused), Leads, Appointments
-- **Marketing Agent**: Marketing Dashboard, Forms, Gallery, Settings
+- Admin, Club Manager, Sales Manager, Consultant, Assistant, Marketing Agent
 
-## What's Been Implemented
+## Implemented Features (as of April 2, 2026)
 
-### Core Features (Complete)
-- Role-based authentication with auto-detect (no role dropdown on login)
-- Role-specific dashboards with KPI stats
-- Lead Pipeline (Kanban & Table views with drag-and-drop)
-- Lead scoring system
-- Deals tracking (Cash vs Debit Order)
-- Appointments calendar
-- Message Templates with AI Writing Assistant
-- Admin Settings (Automation rules, Branding, User Management)
-- Monthly Reports with configurable cutoff dates
-- Analytics page with consultant performance
-- Audit logging, Round-robin lead assignment
+### Phase 1 (Core)
+- [x] Role-based login (auto-detect, no dropdown)
+- [x] Lead capture (Manual, Webhook, Meta forms)
+- [x] Round-robin lead assignment
+- [x] Kanban + Table pipeline view
+- [x] Lead editing with stage transitions
+- [x] **Delete Lead** with cascade (deals, activities, appointments)
+- [x] Appointment booking from lead cards
+- [x] **Standalone Appointment creation** ("Make Appointment" button)
+- [x] Deals tracking (Cash / Debit Order)
+- [x] **Deal value deduction** when lead exits "Closed Won" stage
+- [x] Commission Dashboard with goal tracking & PDF export
+- [x] Configurable Earnings Scale
+- [x] Admin Dashboard with KPI metrics
+- [x] Sales Manager Dashboard
+- [x] Consultant Dashboard
+- [x] Assistant Dashboard (monetary values hidden)
 
-### WhatsApp Integration (Complete)
-- Multi-session Baileys service on port 3001
-- WhatsApp activation in Admin User Management (edit consultant profile)
-- QR code scanning, status badges, send button on leads, template selector
+### Phase 2 (Integrations & Tools)
+- [x] WhatsApp multi-session integration (Baileys)
+- [x] WhatsApp pair mapping in User Management
+- [x] **WhatsApp stale session cleanup** (fixes "FAILED TO LOAD" error)
+- [x] AI Writing Assistant for message templates
+- [x] **AI Chat Assistant** (GPT-4o via Emergent LLM Key) on Emergent Fixes page
+- [x] White-label branding (dynamic logo, company name, colors)
+- [x] Marketing Agent portal (forms, webhooks, media gallery)
+- [x] **Marketing How-To Guide** tab
 
-### Commission System (Complete)
-- Commission page (admin sees all consultants, consultants see own)
-- Income goal input, 3 summary boxes (MTD/Goal/Difference with color coding)
-- Commission earned boxes: Debit Orders (units × rate) + Cash Sales (% of value)
-- Deal tables with totals, PDF export (Landscape A4)
-- Earnings Scale in User Management: Basic Salary, Debit/Cash tiers, Bonuses
+### Phase 3 (Admin Tools & Reports)
+- [x] **Month-End Report overhaul** (MTD Only vs Start New Month)
+- [x] **Global Password Reset** (all passwords → 123xyz/)
+- [x] **MASTER Account** (mastergrey666@xac.com / MASTERGREY666, auto-seeded)
+- [x] **Admin Tools tab** in Settings
+- [x] System settings (month start/end dates, cutoff)
+- [x] Message templates management
+- [x] Audit logging
 
-### Assistant Dashboard (Complete)
-- Shows deal counts (not values), lead-to-appointment conversion ratio
-- Appointment Trend graph, Appointments Today under graph
+### Bug Fixes (April 2, 2026)
+- [x] Lead capture empty email → 422 error (fixed: Optional[str] + null coercion)
+- [x] WhatsApp "FAILED TO LOAD SESSION" (fixed: stale session cleanup in Node service)
+- [x] Default login credentials removed from Login page
+- [x] Earnings Scale input re-rendering bug
+- [x] Removed CSS spinners on number inputs
 
-### Marketing Agent System (Complete)
-- New Marketing Agent role with restricted sidebar (Marketing, Forms, Gallery, Settings)
-- Marketing Dashboard: stats overview (total forms, leads, media, platform breakdown, form performance)
-- Forms CRUD: Create/edit forms with platform selection (Facebook, Instagram, TikTok, Website)
-- Question builder: text, textarea, dropdown, checkbox, radio, email, phone, number types
-- Webhook endpoints for each form (auto-generated, public for external platform integrations)
-- Gallery: Media upload/management (images + videos), filters, preview modal
-- AI Writing Assistant available in form headline + description
-- Media gallery picker in form creation for attaching images/videos
-
-## Prioritized Backlog
+## Pending / Backlog
 
 ### P1 (High Priority)
-- Auto-clear Kanban "Deals Won" at 10am after Cutoff Date (background scheduler)
-- WhatsApp conversation log on lead profiles
-- Automatic follow-up messages for leads with no activity in 12 hours
-- Admin auto-reassign period settings and round-robin for unclosed deals
-- WhatsApp message webhooks for logging client replies to CRM
+- [ ] Email integration for password resets (need integration_playbook_expert_v2 for Resend/SendGrid, sender: xac@xyzservices.co.za)
+- [ ] Dynamic Roles & Permissions Engine (Admin "Role Settings" tab - DB schema change from Enum to dynamic)
+- [ ] Show user's current password in User Management Edit modal
 
 ### P2 (Medium Priority)
-- Export CSV/XLSX for Admin dashboards
-- Duplicate lead detection and merge
-- Tagging system (Hot Lead, Student, High Ticket)
-- SLA tracking (time to first contact)
+- [ ] WhatsApp message webhooks (log client replies to CRM)
+- [ ] WhatsApp conversation log view on each lead's profile
+- [ ] Admin auto-reassign period settings + round-robin for unclosed deals
+- [ ] Auto follow-up messages for leads with no activity in 12 hours
+- [ ] Export CSV/XLSX for Admin dashboards (full export endpoint)
+- [ ] Auto-clear Kanban Deals Won at 10am after Cutoff Date (cron job)
+
+### P3 (Nice to Have)
+- [ ] SLA tracking (time to first contact)
+- [ ] Package tracking (Entry, Mid, High Ticket)
