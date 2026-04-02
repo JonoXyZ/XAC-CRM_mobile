@@ -71,6 +71,8 @@ Build "XAC CRM" – a full-stack gym-focused CRM for Revival Fitness. Key goals 
 - [x] Default login credentials removed from Login page
 - [x] Earnings Scale input re-rendering bug
 - [x] Removed CSS spinners on number inputs
+- [x] Assistant linked consultants multi-select (Add & Edit User modals)
+- [x] Commission data flow verified (deals pull through to commission sheets)
 
 ## Pending / Backlog
 
