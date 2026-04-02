@@ -78,6 +78,19 @@ Build "XAC CRM" – a full-stack gym-focused CRM for Revival Fitness. Key goals 
 - [x] Assistant linked consultants multi-select (Add & Edit User modals)
 - [x] Commission data flow verified (deals pull through to commission sheets)
 
+### Phase 4 (Notifications & Meta Integration)
+- [x] In-app notification bell (header bar, dropdown, unread badge, mark read/all read)
+- [x] WhatsApp push notifications (sent alongside in-app for all triggers)
+- [x] Trigger: New Lead Assigned → notify consultant
+- [x] Trigger: Appointment Reminder → 24h and 2h before (background task)
+- [x] Trigger: New Appointment Booked → notify lead owner
+- [x] Trigger: Lead Stage Changed → notify lead owner
+- [x] Trigger: New Deal Closed → notify all managers
+- [x] Trigger: Meta Lead Captured → notify consultant + managers
+- [x] Trigger: WhatsApp Auto-Appointment → notify consultant
+- [x] Meta/Facebook Lead Ads webhook (GET verification + POST lead ingestion)
+- [x] Revival Fitness Center page subscribed to leadgen events
+
 ## Pending / Backlog
 
 ### P1 (High Priority)
