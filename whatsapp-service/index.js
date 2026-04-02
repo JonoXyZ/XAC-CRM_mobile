@@ -90,20 +90,26 @@ async function sendMessage(userId, phoneNumber, message) {
     const sock = sessions.get(userId);
     
     if (!sock) {
-        return { success: false, message: 'Session not found or not connected' };
+        return { success: false, message: 'Session not found. Please set up WhatsApp first.' };
+    }
+
+    if (!sock.user) {
+        return { success: false, message: 'WhatsApp session is not fully connected. Please re-scan the QR code.' };
     }
 
     try {
         // Format phone number (remove + and spaces, add @s.whatsapp.net)
         const formattedNumber = phoneNumber.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
         
+        logger.info(`Attempting to send message from ${userId} to ${formattedNumber}`);
         await sock.sendMessage(formattedNumber, { text: message });
         logger.info(`Message sent from ${userId} to ${phoneNumber}`);
         
         return { success: true, message: 'Message sent successfully' };
     } catch (error) {
-        logger.error(`Error sending message from ${userId}:`, error);
-        return { success: false, message: error.message };
+        const errorMsg = error?.message || error?.toString() || 'Unknown WhatsApp send error';
+        logger.error(`Error sending message from ${userId}: ${errorMsg}`);
+        return { success: false, message: errorMsg };
     }
 }
 

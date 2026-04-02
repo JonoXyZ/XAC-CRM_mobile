@@ -1064,15 +1064,23 @@ async def get_audit_logs(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/whatsapp/send")
 async def send_whatsapp(message: WhatsAppMessageRequest, current_user: dict = Depends(get_current_user)):
+    # Determine which WhatsApp session to use:
+    # If sending on behalf of a lead, use the lead owner's (consultant's) session
+    # Otherwise fall back to the current user's session
     user_id = str(current_user["_id"])
+    
+    lead = None
+    if message.lead_id:
+        lead = await db.leads.find_one({"_id": ObjectId(message.lead_id)})
+        if lead and lead.get("owner_id"):
+            # Use the consultant's WhatsApp session (the lead's owner)
+            user_id = lead["owner_id"]
     
     # Replace template variables
     message_text = message.message
-    if message.lead_id:
-        lead = await db.leads.find_one({"_id": ObjectId(message.lead_id)})
-        if lead:
-            message_text = message_text.replace("{client_name}", lead["name"])
-            message_text = message_text.replace("{phone}", lead["phone"])
+    if lead:
+        message_text = message_text.replace("{client_name}", lead.get("name", ""))
+        message_text = message_text.replace("{phone}", lead.get("phone", ""))
     
     message_text = message_text.replace("{consultant_name}", current_user["name"])
     
