@@ -57,7 +57,7 @@ const Login = ({ setUser }) => {
         <div className="w-full max-w-md space-y-8">
           <div className="text-center">
             <div className="flex items-center justify-center mb-4">
-              <Barbell size={48} weight="duotone" className="text-lime-400" />
+              <img src="/assets/xac-logo.png" alt="XAC" className="w-16 h-16 object-contain" />
             </div>
             <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-zinc-50" data-testid="login-title">
               {appName}

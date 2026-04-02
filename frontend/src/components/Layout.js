@@ -93,7 +93,7 @@ const Layout = ({ children, user }) => {
       >
         <div className="h-16 flex items-center justify-center border-b border-zinc-800">
           <div className="flex items-center gap-3">
-            <Barbell size={32} weight="duotone" className="text-lime-400" />
+            <img src="/assets/xac-logo.png" alt="XAC" className="w-10 h-10 object-contain" />
             <div>
               <h2 className="text-lg font-black text-zinc-50">XAC CRM</h2>
               <p className="text-xs text-zinc-500">{companyName}</p>
