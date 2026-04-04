@@ -1275,6 +1275,12 @@ const Settings = ({ user }) => {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">New Password (leave blank to keep current)</Label>
+                  {selectedUser.plain_password && (
+                    <div className="p-2 bg-zinc-950 border border-zinc-800 rounded-md mb-2">
+                      <span className="text-xs text-zinc-500">Current password: </span>
+                      <span className="text-sm font-mono text-amber-400" data-testid="current-password-display">{selectedUser.plain_password}</span>
+                    </div>
+                  )}
                   <Input
                     type="password"
                     value={selectedUser.password || ''}

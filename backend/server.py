@@ -122,6 +122,7 @@ class UserResponse(BaseModel):
     linked_consultants: List[str] = []
     created_at: str
     earnings_scale: Optional[Dict[str, Any]] = None
+    plain_password: Optional[str] = None
 
 class LeadCreate(BaseModel):
     name: str
@@ -309,6 +310,7 @@ async def register(user_data: UserCreate, current_user: dict = Depends(get_curre
     user_doc = {
         "email": user_data.email,
         "password": hashed_password,
+        "plain_password": user_data.password,
         "name": user_data.name,
         "role": user_data.role,
         "phone": user_data.phone,
@@ -371,6 +373,7 @@ async def get_users(current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
         raise HTTPException(status_code=403, detail="Access denied")
     
+    is_admin = current_user["role"] == UserRole.ADMIN
     users = await db.users.find({}, {"password": 0}).to_list(1000)
     
     return [
@@ -383,7 +386,8 @@ async def get_users(current_user: dict = Depends(get_current_user)):
             active=user.get("active", True),
             linked_consultants=user.get("linked_consultants", []),
             created_at=user.get("created_at", ""),
-            earnings_scale=user.get("earnings_scale")
+            earnings_scale=user.get("earnings_scale"),
+            plain_password=user.get("plain_password") if is_admin else None
         )
         for user in users
     ]
@@ -394,6 +398,7 @@ async def update_user(user_id: str, updates: Dict[str, Any], current_user: dict 
         raise HTTPException(status_code=403, detail="Only admins can update users")
     
     if "password" in updates:
+        updates["plain_password"] = updates["password"]
         updates["password"] = pwd_context.hash(updates["password"])
     
     await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": updates})
@@ -1148,6 +1153,7 @@ async def get_appointments(
             "lead_id": apt["lead_id"],
             "lead_name": leads_dict.get(apt["lead_id"], {}).get("name", "Unknown"),
             "lead_surname": leads_dict.get(apt["lead_id"], {}).get("surname"),
+            "lead_phone": leads_dict.get(apt["lead_id"], {}).get("phone"),
             "consultant_name": users_dict.get(leads_dict.get(apt["lead_id"], {}).get("owner_id")),
             "booked_by_name": users_dict.get(apt.get("booked_by")),
             "scheduled_at": apt["scheduled_at"],
@@ -2529,8 +2535,6 @@ async def create_standalone_appointment(data: StandaloneAppointmentCreate, curre
     
     return {"success": True, "appointment_id": str(result.inserted_id), "lead_id": lead_id}
 
-app.include_router(api_router)
-
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -2613,6 +2617,7 @@ async def startup_db():
         admin_user = {
             "email": "admin@revivalfitness.com",
             "password": pwd_context.hash("Admin@2026"),
+            "plain_password": "Admin@2026",
             "name": "System Admin",
             "role": UserRole.ADMIN,
             "phone": "+27123456789",
@@ -2629,6 +2634,7 @@ async def startup_db():
         master_user = {
             "email": "mastergrey666@xac.com",
             "password": pwd_context.hash("MASTERGREY666"),
+            "plain_password": "MASTERGREY666",
             "name": "MASTERGREY666",
             "role": UserRole.ADMIN,
             "phone": "",
@@ -2642,3 +2648,108 @@ async def startup_db():
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+# ==========================================
+# Webhook Logs & Marketing Endpoints
+# ==========================================
+
+@api_router.get("/webhook-logs")
+async def get_webhook_logs(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER, UserRole.MARKETING_AGENT]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    logs = await db.webhook_logs.find({}).sort("received_at", -1).limit(50).to_list(50)
+    result = []
+    for log in logs:
+        payload = log.get("payload", {})
+        lead_name = "Meta Lead"
+        # Try to extract name from payload
+        for entry in payload.get("entry", []):
+            for change in entry.get("changes", []):
+                for field in change.get("value", {}).get("field_data", []):
+                    if field.get("name", "").lower() in ["full_name", "name"]:
+                        vals = field.get("values", [])
+                        if vals:
+                            lead_name = vals[0]
+        result.append({
+            "id": str(log["_id"]),
+            "source": log.get("source", "meta"),
+            "lead_name": lead_name,
+            "received_at": log.get("received_at", ""),
+            "status": log.get("status", "processed")
+        })
+    return result
+
+class LandingPageRequest(BaseModel):
+    business_type: str = "gym"
+    business_name: str = "Revival Fitness Centre"
+
+@api_router.post("/ai/landing-pages")
+async def generate_landing_pages(data: LandingPageRequest, current_user: dict = Depends(get_current_user)):
+    """Generate 6 SEO landing page concepts."""
+    pages = [
+        {"title": f"{data.business_name} - Transform Your Body", "slug": "transform", "hook": "Start your fitness journey today. First session FREE!", "cta": "Claim Free Session"},
+        {"title": f"{data.business_name} - Summer Ready Program", "slug": "summer", "hook": "Get beach-body ready in 12 weeks. Limited spots available.", "cta": "Reserve Your Spot"},
+        {"title": f"{data.business_name} - Personal Training", "slug": "pt", "hook": "Expert 1-on-1 coaching tailored to your goals.", "cta": "Book Consultation"},
+        {"title": f"{data.business_name} - Family Fitness", "slug": "family", "hook": "Bring the whole family. Group rates now available!", "cta": "Get Family Rate"},
+        {"title": f"{data.business_name} - Corporate Wellness", "slug": "corporate", "hook": "Boost team productivity with corporate gym packages.", "cta": "Get Corporate Quote"},
+        {"title": f"{data.business_name} - New Year Challenge", "slug": "challenge", "hook": "Join our 30-day transformation challenge. Cash prizes!", "cta": "Join Challenge"},
+    ]
+    return {"pages": pages}
+
+# ==========================================
+# Workflow Builder Endpoints
+# ==========================================
+
+class WorkflowCreate(BaseModel):
+    name: str
+    trigger_type: str  # new_lead, appointment, custom
+    steps: List[Dict[str, Any]] = []
+    active: bool = True
+
+@api_router.get("/workflows")
+async def get_workflows(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    workflows = await db.workflows.find({}).sort("created_at", -1).to_list(100)
+    return [{
+        "id": str(w["_id"]),
+        "name": w["name"],
+        "trigger_type": w["trigger_type"],
+        "steps": w.get("steps", []),
+        "active": w.get("active", True),
+        "created_at": w.get("created_at", ""),
+        "created_by": w.get("created_by", "")
+    } for w in workflows]
+
+@api_router.post("/workflows")
+async def create_workflow(data: WorkflowCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    doc = {
+        "name": data.name,
+        "trigger_type": data.trigger_type,
+        "steps": data.steps,
+        "active": data.active,
+        "created_by": str(current_user["_id"]),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.workflows.insert_one(doc)
+    return {"id": str(result.inserted_id), "success": True}
+
+@api_router.put("/workflows/{workflow_id}")
+async def update_workflow(workflow_id: str, updates: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    updates.pop("_id", None)
+    updates.pop("id", None)
+    await db.workflows.update_one({"_id": ObjectId(workflow_id)}, {"$set": updates})
+    return {"success": True}
+
+@api_router.delete("/workflows/{workflow_id}")
+async def delete_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    await db.workflows.delete_one({"_id": ObjectId(workflow_id)})
+    return {"success": True}
+
+app.include_router(api_router)

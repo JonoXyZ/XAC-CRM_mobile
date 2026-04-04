@@ -15,7 +15,8 @@ import {
   Barbell,
   CurrencyCircleDollar,
   Megaphone,
-  Image
+  Image,
+  FlowArrow
 } from '@phosphor-icons/react';
 
 const Layout = ({ children, user }) => {
@@ -49,7 +50,8 @@ const Layout = ({ children, user }) => {
     if (user?.role === 'admin' || user?.role === 'sales_manager') {
       menuItems.push(
         { path: '/reports', icon: FileText, label: 'Reports', testId: 'nav-reports' },
-        { path: '/analytics', icon: ChartBar, label: 'Analytics', testId: 'nav-analytics' }
+        { path: '/analytics', icon: ChartBar, label: 'Analytics', testId: 'nav-analytics' },
+        { path: '/workflows', icon: FlowArrow, label: 'Workflows', testId: 'nav-workflows' }
       );
     }
 
@@ -58,10 +60,11 @@ const Layout = ({ children, user }) => {
       menuItems.push({ path: '/commission', icon: CurrencyCircleDollar, label: 'Commission', testId: 'nav-commission' });
     }
 
-    // Admin also gets Marketing + Gallery + Forms
+    // Admin also gets Marketing + Gallery + Forms + Marketing Panel
     if (user?.role === 'admin') {
       menuItems.push(
         { path: '/marketing', icon: Megaphone, label: 'Marketing', testId: 'nav-marketing' },
+        { path: '/marketing-panel', icon: ChartBar, label: 'Ad Manager', testId: 'nav-marketing-panel' },
         { path: '/marketing/forms', icon: FileText, label: 'Forms', testId: 'nav-forms' }
       );
     }

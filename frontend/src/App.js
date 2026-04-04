@@ -14,6 +14,8 @@ import MarketingForms from './pages/MarketingForms';
 import Gallery from './pages/Gallery';
 import EmergentFixes from './pages/EmergentFixes';
 import Settings from './pages/Settings';
+import WorkflowBuilder from './pages/WorkflowBuilder';
+import MarketingPanel from './pages/MarketingPanel';
 import FloatingChatButton from './components/FloatingChatButton';
 import { Toaster } from './components/ui/sonner';
 import './App.css';
@@ -148,6 +150,22 @@ function App() {
           element={
             <ProtectedRoute>
               <Settings user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workflows"
+          element={
+            <ProtectedRoute>
+              <WorkflowBuilder user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/marketing-panel"
+          element={
+            <ProtectedRoute>
+              <MarketingPanel user={user} />
             </ProtectedRoute>
           }
         />

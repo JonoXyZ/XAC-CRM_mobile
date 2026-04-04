@@ -9,7 +9,7 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Phone, Envelope, Tag, PencilSimple, CalendarPlus, SquaresFour, Table, Star, WhatsappLogo, Trash } from '@phosphor-icons/react';
+import { Plus, Phone, Envelope, Tag, PencilSimple, CalendarPlus, SquaresFour, Table, Star, WhatsappLogo, Trash, PhoneCall } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -502,6 +502,18 @@ const Leads = ({ user }) => {
                                   <Button
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      if (lead.phone) window.open(`tel:${lead.phone}`, '_self');
+                                    }}
+                                    data-testid={`call-lead-${lead.id}`}
+                                    className="bg-blue-600 text-white font-bold hover:bg-blue-700 flex items-center justify-center gap-1 px-3"
+                                    disabled={!lead.phone}
+                                    title="Call Lead"
+                                  >
+                                    <PhoneCall size={16} weight="bold" />
+                                  </Button>
+                                  <Button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       openWhatsAppModal(lead);
                                     }}
                                     data-testid={`whatsapp-lead-${lead.id}`}
@@ -593,6 +605,15 @@ const Leads = ({ user }) => {
                     </td>
                     <td className="p-4">
                       <div className="flex gap-2">
+                        <Button
+                          onClick={() => { if (lead.phone) window.open(`tel:${lead.phone}`, '_self'); }}
+                          data-testid={`table-call-${lead.id}`}
+                          className="p-2 bg-blue-600 hover:bg-blue-700"
+                          title="Call Lead"
+                          disabled={!lead.phone}
+                        >
+                          <PhoneCall size={16} weight="bold" />
+                        </Button>
                         <Button
                           onClick={() => openWhatsAppModal(lead)}
                           data-testid={`table-whatsapp-${lead.id}`}

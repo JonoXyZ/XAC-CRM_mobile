@@ -8,9 +8,12 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from 'sonner';
-import { Calendar, Clock, User, Plus } from '@phosphor-icons/react';
+import { Calendar, Clock, User, Plus, Phone, MapPin, Bell, PaperPlaneTilt, ChatDots } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
+
+const PIN_ADDRESS = "Revival Fitness Centre, 143 Burger Avenue, Lyttleton Manor, Centurion 0157";
+const PIN_MAPS_LINK = "https://maps.google.com/?q=Revival+Fitness+Centre+143+Burger+Avenue+Lyttleton+Manor+Centurion+0157";
 
 const TIME_SLOTS = {
   'Mon': ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00'],
@@ -28,6 +31,7 @@ const Appointments = ({ user }) => {
   const [showNewModal, setShowNewModal] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState({});
   const [newAppointment, setNewAppointment] = useState({
     name: '',
     surname: '',
@@ -113,6 +117,48 @@ const Appointments = ({ user }) => {
     setShowNewModal(true);
   };
 
+  const sendWhatsAppAction = async (appointment, messageText, actionKey) => {
+    if (!appointment.lead_phone) {
+      toast.error('No phone number for this lead');
+      return;
+    }
+    setActionLoading(prev => ({ ...prev, [actionKey]: true }));
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/api/whatsapp/send`, {
+        phone_number: appointment.lead_phone,
+        message: messageText,
+        lead_id: appointment.lead_id
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success('Message sent via WhatsApp');
+    } catch (error) {
+      toast.error('Failed to send WhatsApp message');
+    } finally {
+      setActionLoading(prev => ({ ...prev, [actionKey]: false }));
+    }
+  };
+
+  const handleSendPin = (apt) => {
+    const msg = `Hi ${apt.lead_name}! Here are the directions to your appointment:\n\n${PIN_ADDRESS}\n\nGoogle Maps: ${PIN_MAPS_LINK}\n\nSee you soon!`;
+    sendWhatsAppAction(apt, msg, `pin-${apt.id}`);
+  };
+
+  const handleSetReminder = (apt) => {
+    const aptTime = apt.scheduled_at.split('T')[1]?.substring(0, 5) || '';
+    const msg = `Hi ${apt.lead_name}, just a reminder about your appointment at Revival Fitness Centre on ${selectedDate} at ${aptTime}. We look forward to seeing you!`;
+    sendWhatsAppAction(apt, msg, `reminder-${apt.id}`);
+  };
+
+  const handleSendFollowUp = (apt) => {
+    const msg = `Hi ${apt.lead_name}, we missed you at your appointment! Would you like to reschedule? We'd love to help you get started on your fitness journey at Revival Fitness Centre. Let us know a time that works for you!`;
+    sendWhatsAppAction(apt, msg, `followup-${apt.id}`);
+  };
+
+  const handleCall = (phone) => {
+    if (phone) window.open(`tel:${phone}`, '_self');
+    else toast.error('No phone number available');
+  };
+
   const dayOfWeek = getDayOfWeek(selectedDate);
   const availableSlots = TIME_SLOTS[dayOfWeek] || [];
 
@@ -170,7 +216,7 @@ const Appointments = ({ user }) => {
                 return (
                   <div
                     key={time}
-                    className={`flex items-center gap-4 p-4 rounded-md border ${
+                    className={`p-4 rounded-md border ${
                       appointment
                         ? 'bg-lime-400/10 border-lime-400/30 hover:border-lime-400/50'
                         : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 cursor-pointer'
@@ -178,46 +224,94 @@ const Appointments = ({ user }) => {
                     data-testid={`time-slot-${time}`}
                     onClick={() => !appointment && openNewAppointmentModal(time)}
                   >
-                    <div className="w-20 flex items-center gap-2 text-sm font-semibold text-zinc-400">
-                      <Clock size={16} />
-                      {time}
-                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 flex items-center gap-2 text-sm font-semibold text-zinc-400">
+                        <Clock size={16} />
+                        {time}
+                      </div>
 
-                    {appointment ? (
-                      <div className="flex-1 flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold text-zinc-100">
-                            {appointment.lead_name} {appointment.lead_surname || ''}
-                          </p>
-                          <div className="flex items-center gap-4 mt-1 text-sm text-zinc-400">
-                            <div className="flex items-center gap-1">
-                              <User size={14} />
-                              <span>{appointment.consultant_name}</span>
+                      {appointment ? (
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold text-zinc-100">
+                                {appointment.lead_name} {appointment.lead_surname || ''}
+                              </p>
+                              <div className="flex items-center gap-4 mt-1 text-sm text-zinc-400">
+                                <div className="flex items-center gap-1">
+                                  <User size={14} />
+                                  <span>{appointment.consultant_name}</span>
+                                </div>
+                                {appointment.lead_phone && (
+                                  <div className="flex items-center gap-1">
+                                    <Phone size={14} />
+                                    <span>{appointment.lead_phone}</span>
+                                  </div>
+                                )}
+                                {appointment.booked_by_name && appointment.booked_by_name !== appointment.consultant_name && (
+                                  <span className="text-xs text-cyan-500">
+                                    Booked by: {appointment.booked_by_name}
+                                  </span>
+                                )}
+                                {appointment.notes && (
+                                  <span className="text-xs">Note: {appointment.notes}</span>
+                                )}
+                              </div>
                             </div>
-                            {appointment.booked_by_name && appointment.booked_by_name !== appointment.consultant_name && (
-                              <span className="text-xs text-cyan-500">
-                                Booked by: {appointment.booked_by_name}
-                              </span>
-                            )}
-                            {appointment.notes && (
-                              <span className="text-xs">Note: {appointment.notes}</span>
-                            )}
+                            <Button
+                              onClick={(e) => { e.stopPropagation(); handleEditAppointment(appointment); }}
+                              data-testid={`edit-appointment-${appointment.id}`}
+                              className="bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
+                            >
+                              Edit
+                            </Button>
+                          </div>
+                          {/* Action Buttons Row */}
+                          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-lime-400/20">
+                            <Button
+                              onClick={(e) => { e.stopPropagation(); handleCall(appointment.lead_phone); }}
+                              data-testid={`call-appointment-${appointment.id}`}
+                              className="bg-blue-600 text-white hover:bg-blue-700 text-xs px-3 py-1 h-8 flex items-center gap-1.5"
+                            >
+                              <Phone size={14} weight="bold" />
+                              Call
+                            </Button>
+                            <Button
+                              onClick={(e) => { e.stopPropagation(); handleSendPin(appointment); }}
+                              disabled={actionLoading[`pin-${appointment.id}`]}
+                              data-testid={`send-pin-${appointment.id}`}
+                              className="bg-orange-600 text-white hover:bg-orange-700 text-xs px-3 py-1 h-8 flex items-center gap-1.5"
+                            >
+                              <MapPin size={14} weight="bold" />
+                              {actionLoading[`pin-${appointment.id}`] ? 'Sending...' : 'Send Pin'}
+                            </Button>
+                            <Button
+                              onClick={(e) => { e.stopPropagation(); handleSetReminder(appointment); }}
+                              disabled={actionLoading[`reminder-${appointment.id}`]}
+                              data-testid={`send-reminder-${appointment.id}`}
+                              className="bg-amber-600 text-white hover:bg-amber-700 text-xs px-3 py-1 h-8 flex items-center gap-1.5"
+                            >
+                              <Bell size={14} weight="bold" />
+                              {actionLoading[`reminder-${appointment.id}`] ? 'Sending...' : 'Send Reminder'}
+                            </Button>
+                            <Button
+                              onClick={(e) => { e.stopPropagation(); handleSendFollowUp(appointment); }}
+                              disabled={actionLoading[`followup-${appointment.id}`]}
+                              data-testid={`send-followup-${appointment.id}`}
+                              className="bg-violet-600 text-white hover:bg-violet-700 text-xs px-3 py-1 h-8 flex items-center gap-1.5"
+                            >
+                              <ChatDots size={14} weight="bold" />
+                              {actionLoading[`followup-${appointment.id}`] ? 'Sending...' : 'Follow Up'}
+                            </Button>
                           </div>
                         </div>
-                        <Button
-                          onClick={(e) => { e.stopPropagation(); handleEditAppointment(appointment); }}
-                          data-testid={`edit-appointment-${appointment.id}`}
-                          className="bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
-                        >
-                          Edit
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex-1 flex items-center justify-between">
-                        <span className="text-sm text-zinc-600">Available</span>
-                        <Plus size={16} className="text-zinc-600" />
-                      </div>
-                    )}
+                      ) : (
+                        <div className="flex-1 flex items-center justify-between">
+                          <span className="text-sm text-zinc-600">Available</span>
+                          <Plus size={16} className="text-zinc-600" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
