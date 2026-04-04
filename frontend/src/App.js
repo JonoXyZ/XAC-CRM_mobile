@@ -16,6 +16,7 @@ import EmergentFixes from './pages/EmergentFixes';
 import Settings from './pages/Settings';
 import WorkflowBuilder from './pages/WorkflowBuilder';
 import MarketingPanel from './pages/MarketingPanel';
+import BugReports from './pages/BugReports';
 import FloatingChatButton from './components/FloatingChatButton';
 import { Toaster } from './components/ui/sonner';
 import './App.css';
@@ -166,6 +167,14 @@ function App() {
           element={
             <ProtectedRoute>
               <MarketingPanel user={user} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/bug-reports"
+          element={
+            <ProtectedRoute>
+              <BugReports user={user} />
             </ProtectedRoute>
           }
         />

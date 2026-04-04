@@ -2650,6 +2650,95 @@ async def shutdown_db_client():
     client.close()
 
 # ==========================================
+# Bug Report Endpoints
+# ==========================================
+
+ADMIN_BUG_REPORT_PHONE = "27603245830"
+
+class BugReportCreate(BaseModel):
+    description: str
+    priority: str = "medium"
+    page: Optional[str] = None
+    browser: Optional[str] = None
+
+@api_router.post("/bug-reports")
+async def create_bug_report(data: BugReportCreate, current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    report = {
+        "description": data.description,
+        "priority": data.priority,
+        "page": data.page,
+        "browser": data.browser,
+        "reported_by": user_id,
+        "reported_by_name": current_user["name"],
+        "reported_by_email": current_user["email"],
+        "status": "open",
+        "wa_sent": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.bug_reports.insert_one(report)
+    report_id = str(result.inserted_id)
+
+    # Build WhatsApp message
+    wa_message = (
+        f"*BUG REPORT #{report_id[-6:].upper()}*\n"
+        f"---\n"
+        f"*From:* {current_user['name']} ({current_user['email']})\n"
+        f"*Priority:* {data.priority.upper()}\n"
+        f"*Page:* {data.page or 'N/A'}\n"
+        f"*Time:* {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}\n"
+        f"---\n"
+        f"*Description:*\n{data.description}\n"
+        f"---\n"
+        f"*Status:* OPEN\n"
+        f"*Action Required:* Review and assign fix"
+    )
+
+    # Send via reporter's WhatsApp session to admin number
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client_http:
+            resp = await client_http.post(f"{WHATSAPP_SERVICE_URL}/send-message", json={
+                "userId": user_id,
+                "phoneNumber": ADMIN_BUG_REPORT_PHONE,
+                "message": wa_message
+            })
+            wa_result = resp.json()
+            if wa_result.get("success"):
+                await db.bug_reports.update_one({"_id": result.inserted_id}, {"$set": {"wa_sent": True}})
+    except Exception as e:
+        logger.error(f"Bug report WA send error: {e}")
+
+    return {"success": True, "id": report_id}
+
+@api_router.get("/bug-reports")
+async def get_bug_reports(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can view all bug reports")
+    reports = await db.bug_reports.find({}).sort("created_at", -1).to_list(500)
+    return [{
+        "id": str(r["_id"]),
+        "description": r["description"],
+        "priority": r.get("priority", "medium"),
+        "page": r.get("page"),
+        "reported_by": r.get("reported_by"),
+        "reported_by_name": r.get("reported_by_name", "Unknown"),
+        "reported_by_email": r.get("reported_by_email", ""),
+        "status": r.get("status", "open"),
+        "wa_sent": r.get("wa_sent", False),
+        "created_at": r.get("created_at", "")
+    } for r in reports]
+
+@api_router.put("/bug-reports/{report_id}")
+async def update_bug_report(report_id: str, updates: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can update bug reports")
+    allowed = {"status"}
+    filtered = {k: v for k, v in updates.items() if k in allowed}
+    if filtered:
+        await db.bug_reports.update_one({"_id": ObjectId(report_id)}, {"$set": filtered})
+    return {"success": True}
+
+# ==========================================
 # Webhook Logs & Marketing Endpoints
 # ==========================================
 

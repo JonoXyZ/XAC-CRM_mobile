@@ -113,6 +113,20 @@ const Login = ({ setUser }) => {
           <div className="text-center text-sm text-zinc-500">
             <p>Forgot your password? Send <strong>.XACPASS</strong> to your linked WhatsApp.</p>
           </div>
+
+          <div className="border-t border-zinc-800 pt-6 mt-4">
+            <div className="text-center space-y-2">
+              <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider">Contact Us</h3>
+              <a
+                href="mailto:Xac@Xyzservices.co.za"
+                className="text-sm text-lime-400 hover:text-lime-300 font-semibold transition-colors"
+                data-testid="contact-email-link"
+              >
+                Xac@Xyzservices.co.za
+              </a>
+              <p className="text-xs text-zinc-600">More details to follow</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

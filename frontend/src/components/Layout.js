@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { BrandingContext } from '../App';
 import { Button } from './ui/button';
 import NotificationBell from './NotificationBell';
+import BugReportButton from './BugReportButton';
 import { 
   House, 
   Users, 
@@ -16,7 +17,8 @@ import {
   CurrencyCircleDollar,
   Megaphone,
   Image,
-  FlowArrow
+  FlowArrow,
+  Bug
 } from '@phosphor-icons/react';
 
 const Layout = ({ children, user }) => {
@@ -81,6 +83,12 @@ const Layout = ({ children, user }) => {
         label: 'Emergent Fixes', 
         testId: 'nav-emergent-fixes',
         highlight: true 
+      });
+      menuItems.push({
+        path: '/bug-reports',
+        icon: Bug,
+        label: 'Bug Reports',
+        testId: 'nav-bug-reports'
       });
     }
   }
@@ -157,6 +165,7 @@ const Layout = ({ children, user }) => {
       <main className="ml-64 flex-1">
         <div className="sticky top-0 z-30 h-14 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50 flex items-center justify-end px-6">
           <div className="flex items-center gap-4">
+            <BugReportButton />
             <NotificationBell />
             <div className="text-right">
               <p className="text-sm font-semibold text-zinc-200">{user?.name}</p>
