@@ -25,6 +25,18 @@ const STAGES = [
   'Invalid'
 ];
 
+const STAGE_COLORS = {
+  'New Lead': { border: 'border-sky-500', bg: 'bg-sky-500/10', text: 'text-sky-400', dot: 'bg-sky-500' },
+  'Contacted': { border: 'border-violet-500', bg: 'bg-violet-500/10', text: 'text-violet-400', dot: 'bg-violet-500' },
+  'Engaged': { border: 'border-amber-500', bg: 'bg-amber-500/10', text: 'text-amber-400', dot: 'bg-amber-500' },
+  'Appointment Set': { border: 'border-cyan-500', bg: 'bg-cyan-500/10', text: 'text-cyan-400', dot: 'bg-cyan-500' },
+  'Showed Up': { border: 'border-teal-500', bg: 'bg-teal-500/10', text: 'text-teal-400', dot: 'bg-teal-500' },
+  'Trial / Consultation': { border: 'border-orange-500', bg: 'bg-orange-500/10', text: 'text-orange-400', dot: 'bg-orange-500' },
+  'Closed Won': { border: 'border-emerald-500', bg: 'bg-emerald-500/10', text: 'text-emerald-400', dot: 'bg-emerald-500' },
+  'Closed Lost': { border: 'border-red-500', bg: 'bg-red-500/10', text: 'text-red-400', dot: 'bg-red-500' },
+  'Invalid': { border: 'border-zinc-600', bg: 'bg-zinc-600/10', text: 'text-zinc-500', dot: 'bg-zinc-600' },
+};
+
 const Leads = ({ user }) => {
   const [leads, setLeads] = useState([]);
   const [users, setUsers] = useState([]);
@@ -383,14 +395,17 @@ const Leads = ({ user }) => {
                 <Droppable droppableId={`stage-${stageIndex}`} key={stage}>
                   {(provided) => (
                     <div
-                      className="kanban-column"
+                      className={`kanban-column border-t-2 ${(STAGE_COLORS[stage] || STAGE_COLORS['Invalid']).border}`}
                       ref={provided.innerRef}
                       {...provided.droppableProps}
                       data-testid={`kanban-column-${stage.toLowerCase().replace(/\s+/g, '-')}`}
                     >
                       <div className="kanban-column-header">
-                        <h3 className="text-sm font-bold text-zinc-300">{stage}</h3>
-                        <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2.5 h-2.5 rounded-full ${(STAGE_COLORS[stage] || STAGE_COLORS['Invalid']).dot}`} />
+                          <h3 className={`text-sm font-bold ${(STAGE_COLORS[stage] || STAGE_COLORS['Invalid']).text}`}>{stage}</h3>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${(STAGE_COLORS[stage] || STAGE_COLORS['Invalid']).bg} ${(STAGE_COLORS[stage] || STAGE_COLORS['Invalid']).text}`}>
                           {getLeadsByStage(stage).length}
                         </span>
                       </div>
@@ -561,12 +576,17 @@ const Leads = ({ user }) => {
                         onValueChange={(value) => handleStageChange(lead.id, value)}
                         data-testid={`stage-select-${lead.id}`}
                       >
-                        <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50 w-48">
+                        <SelectTrigger className={`border-zinc-800 w-48 ${(STAGE_COLORS[lead.stage] || STAGE_COLORS['Invalid']).bg} ${(STAGE_COLORS[lead.stage] || STAGE_COLORS['Invalid']).text}`}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-zinc-900 border-zinc-800">
                           {STAGES.map(stage => (
-                            <SelectItem key={stage} value={stage}>{stage}</SelectItem>
+                            <SelectItem key={stage} value={stage}>
+                              <span className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${(STAGE_COLORS[stage] || STAGE_COLORS['Invalid']).dot}`} />
+                                {stage}
+                              </span>
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

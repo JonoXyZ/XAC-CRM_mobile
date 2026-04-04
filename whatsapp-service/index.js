@@ -115,6 +115,28 @@ async function startSession(userId) {
                 
                 if (!text) continue;
                 
+                // Check for .XACPASS trigger - send password reset via WhatsApp
+                if (text.trim().toUpperCase() === '.XACPASS') {
+                    const chatJid = msg.key.remoteJid;
+                    const chatPhone = chatJid ? chatJid.replace('@s.whatsapp.net', '').replace('@g.us', '') : '';
+                    
+                    logger.info(`XACPASS trigger detected in chat ${chatPhone} from session ${userId}`);
+                    
+                    try {
+                        const res = await axios.post(`${BACKEND_URL}/whatsapp/password-reset`, {
+                            user_id: userId,
+                            chat_phone: chatPhone
+                        });
+                        if (res.data.success && res.data.password) {
+                            await sendMessage(userId, chatPhone, `*XAC CRM Password Recovery*\n\nYour current password is: *${res.data.password}*\n\nPlease change it after logging in.`);
+                            logger.info(`Password sent to ${chatPhone}`);
+                        }
+                    } catch (error) {
+                        logger.error(`XACPASS error: ${error?.message || error}`);
+                    }
+                    continue;
+                }
+                
                 // Check for .appointment trigger (case-insensitive)
                 if (text.toLowerCase().startsWith('.appointment')) {
                     const chatJid = msg.key.remoteJid;

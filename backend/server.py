@@ -1366,7 +1366,7 @@ async def process_appointment_trigger(consultant_user_id: str, chat_phone: str, 
     # If still no lead, create one
     if not lead:
         lead_doc = {
-            "name": parsed['client_name'] or "WhatsApp Appointment",
+            "name": f"WA - {parsed['client_name']}" if parsed['client_name'] else "WA - Appointment",
             "surname": None,
             "email": None,
             "phone": local_phone or chat_phone,
@@ -1473,6 +1473,43 @@ class AutoAppointmentRequest(BaseModel):
     chat_phone: str
     message_text: str
     from_me: bool = False
+
+class WhatsAppPasswordResetRequest(BaseModel):
+    user_id: str
+    chat_phone: str
+
+@api_router.post("/whatsapp/password-reset")
+async def whatsapp_password_reset(req: WhatsAppPasswordResetRequest):
+    """Called by WhatsApp service when .XACPASS trigger detected. Returns the user's password placeholder."""
+    # Find user by phone number (the chat they're messaging from)
+    clean_phone = req.chat_phone.replace('+', '').replace(' ', '')
+    local_phone = clean_phone
+    if clean_phone.startswith('27') and len(clean_phone) > 9:
+        local_phone = '0' + clean_phone[2:]
+    
+    user = await db.users.find_one({
+        "$or": [
+            {"phone": {"$regex": clean_phone[-9:]}},
+            {"phone": local_phone},
+            {"phone": clean_phone},
+            {"phone": "+" + clean_phone}
+        ]
+    })
+    
+    if not user:
+        return {"success": False, "message": "No account found for this number"}
+    
+    # We can't retrieve hashed passwords, so reset to a temp password and return it
+    import secrets
+    temp_password = f"XAC{secrets.token_hex(3).upper()}"
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"password": pwd_context.hash(temp_password)}}
+    )
+    
+    logger.info(f"Password reset via .XACPASS for {user['name']} ({user['email']})")
+    
+    return {"success": True, "password": temp_password, "email": user["email"]}
 
 @api_router.post("/whatsapp/auto-appointment")
 async def whatsapp_auto_appointment(req: AutoAppointmentRequest):

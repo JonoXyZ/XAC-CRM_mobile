@@ -78,7 +78,13 @@ Build "XAC CRM" – a full-stack gym-focused CRM for Revival Fitness. Key goals 
 - [x] Assistant linked consultants multi-select (Add & Edit User modals)
 - [x] Commission data flow verified (deals pull through to commission sheets)
 
-### Phase 4 (Notifications & Meta Integration)
+### Phase 5 (Landing Page, Color Stages, Password Reset)
+- [x] Main Landing Page with company description, features, how-it-works, CTA
+- [x] Company Portal gate (code: RFC911 for Revival Fitness Centre)
+- [x] Color-coded lead stages (Kanban columns + table dropdowns)
+- [x] WhatsApp .XACPASS trigger — sends temp password to linked WhatsApp number
+- [x] WA Appointment naming — auto-created appointments prefixed "WA - (Name)"
+- [x] WhatsApp Disconnect button — clears corrupted auth, fresh QR on re-activate
 - [x] In-app notification bell (header bar, dropdown, unread badge, mark read/all read)
 - [x] WhatsApp push notifications (sent alongside in-app for all triggers)
 - [x] Trigger: New Lead Assigned → notify consultant

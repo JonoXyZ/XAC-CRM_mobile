@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
+import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Leads from './pages/Leads';
@@ -51,7 +52,7 @@ function App() {
 
   const ProtectedRoute = ({ children }) => {
     const token = localStorage.getItem('token');
-    return token ? children : <Navigate to="/" replace />;
+    return token ? children : <Navigate to="/login" replace />;
   };
 
   return (
@@ -60,7 +61,8 @@ function App() {
       <Toaster position="top-right" richColors />
       <FloatingChatButton user={user} type="emergent" />
       <Routes>
-        <Route path="/" element={<Login setUser={setUser} />} />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<Login setUser={setUser} />} />
         <Route
           path="/dashboard"
           element={

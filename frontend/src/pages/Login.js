@@ -16,6 +16,8 @@ const Login = ({ setUser }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  
+  const company = JSON.parse(localStorage.getItem('company') || '{}');
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -109,7 +111,7 @@ const Login = ({ setUser }) => {
           </form>
 
           <div className="text-center text-sm text-zinc-500">
-            <p>Forgot your password? Contact your administrator.</p>
+            <p>Forgot your password? Send <strong>.XACPASS</strong> to your linked WhatsApp.</p>
           </div>
         </div>
       </div>
