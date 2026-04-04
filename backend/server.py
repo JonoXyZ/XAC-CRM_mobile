@@ -1559,6 +1559,21 @@ async def logout_whatsapp(user_id: str, current_user: dict = Depends(get_current
         logger.error(f"WhatsApp logout error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.post("/whatsapp/disconnect")
+async def disconnect_whatsapp(user_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can disconnect WhatsApp sessions")
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(f"{WHATSAPP_SERVICE_URL}/disconnect/{user_id}")
+            result = response.json()
+            return result
+    except Exception as e:
+        logger.error(f"WhatsApp disconnect error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @api_router.get("/whatsapp/status-all")
 async def get_all_whatsapp_status(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != UserRole.ADMIN:

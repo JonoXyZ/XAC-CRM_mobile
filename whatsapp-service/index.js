@@ -22,6 +22,9 @@ if (!fs.existsSync(AUTH_DIR)) {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
 }
 
+const reconnectAttempts = new Map(); // Track reconnect attempts per user
+const MAX_RECONNECT_ATTEMPTS = 3;
+
 async function startSession(userId) {
     if (sessions.has(userId)) {
         const existingSock = sessions.get(userId);
@@ -29,15 +32,24 @@ async function startSession(userId) {
             return { success: true, message: 'Session already connected' };
         }
         // Session exists but not connected - clean up stale session
+        try { existingSock.end(); } catch(e) {}
         sessions.delete(userId);
         qrCodes.delete(userId);
     }
 
     try {
         const authPath = path.join(AUTH_DIR, userId);
-        if (!fs.existsSync(authPath)) {
-            fs.mkdirSync(authPath, { recursive: true });
+        
+        // If auth files exist but session failed to connect previously, 
+        // clear corrupted auth to force fresh QR scan
+        if (fs.existsSync(authPath)) {
+            const files = fs.readdirSync(authPath);
+            if (files.length > 0) {
+                logger.info(`Clearing stale auth files for ${userId} to force fresh session`);
+                fs.rmSync(authPath, { recursive: true, force: true });
+            }
         }
+        fs.mkdirSync(authPath, { recursive: true });
 
         const { state, saveCreds } = await useMultiFileAuthState(authPath);
         const { version } = await fetchLatestBaileysVersion();
@@ -67,17 +79,27 @@ async function startSession(userId) {
 
             if (connection === 'close') {
                 const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-                logger.info(`Connection closed for ${userId}, reconnecting: ${shouldReconnect}`);
+                const attempts = reconnectAttempts.get(userId) || 0;
+                
+                logger.info(`Connection closed for ${userId}, reconnecting: ${shouldReconnect}, attempt: ${attempts}`);
 
-                if (shouldReconnect) {
+                if (shouldReconnect && attempts < MAX_RECONNECT_ATTEMPTS) {
+                    reconnectAttempts.set(userId, attempts + 1);
                     setTimeout(() => startSession(userId), 3000);
                 } else {
                     sessions.delete(userId);
                     qrCodes.delete(userId);
+                    reconnectAttempts.delete(userId);
+                    if (attempts >= MAX_RECONNECT_ATTEMPTS) {
+                        logger.warn(`Max reconnect attempts reached for ${userId}, clearing auth`);
+                        const authPath = path.join(AUTH_DIR, userId);
+                        fs.rmSync(authPath, { recursive: true, force: true });
+                    }
                 }
             } else if (connection === 'open') {
                 logger.info(`WhatsApp connected for user ${userId}`);
                 qrCodes.delete(userId);
+                reconnectAttempts.delete(userId); // Reset on successful connection
             }
         });
 
@@ -216,6 +238,30 @@ app.get('/qr/:userId', (req, res) => {
     } else {
         res.status(404).json({ error: 'No QR code available' });
     }
+});
+
+
+// Force disconnect and clear auth for a user (fixes corrupted sessions after redeploy)
+app.post('/disconnect/:userId', (req, res) => {
+    const { userId } = req.params;
+    const sock = sessions.get(userId);
+    
+    if (sock) {
+        try { sock.end(); } catch(e) {}
+    }
+    
+    sessions.delete(userId);
+    qrCodes.delete(userId);
+    reconnectAttempts.delete(userId);
+    
+    // Clear auth files
+    const authPath = path.join(AUTH_DIR, userId);
+    if (fs.existsSync(authPath)) {
+        fs.rmSync(authPath, { recursive: true, force: true });
+        logger.info(`Auth cleared for ${userId}`);
+    }
+    
+    res.json({ success: true, message: 'Session disconnected and auth cleared' });
 });
 
 app.get('/status/:userId', (req, res) => {

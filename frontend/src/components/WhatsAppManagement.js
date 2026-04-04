@@ -114,14 +114,14 @@ const WhatsAppManagement = ({ users }) => {
   };
 
   const handleLogout = async (user) => {
-    if (!window.confirm(`Disconnect WhatsApp for ${user.name}?`)) return;
+    if (!window.confirm(`Disconnect WhatsApp for ${user.name}? This will clear the session and require a new QR scan.`)) return;
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/whatsapp/logout?user_id=${user.id}`, {}, {
+      await axios.post(`${API_URL}/api/whatsapp/disconnect?user_id=${user.id}`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      toast.success(`WhatsApp disconnected for ${user.name}`);
+      toast.success(`WhatsApp disconnected for ${user.name}. Click Setup to reconnect.`);
       fetchAllStatuses();
     } catch (error) {
       toast.error('Failed to disconnect WhatsApp');
@@ -159,17 +159,30 @@ const WhatsAppManagement = ({ users }) => {
                     data-testid={`disconnect-whatsapp-${user.id}`}
                     className="bg-red-900 hover:bg-red-800 text-red-100"
                   >
-                    <Power size={18} />
+                    <Power size={18} className="mr-1" />
+                    Disconnect
                   </Button>
                 ) : (
-                  <Button
-                    onClick={() => handleStartSession(user)}
-                    data-testid={`setup-whatsapp-${user.id}`}
-                    className="bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
-                  >
-                    <QrCode size={18} weight="bold" className="mr-1" />
-                    Setup
-                  </Button>
+                  <div className="flex gap-2">
+                    {status.hasQR && (
+                      <Button
+                        onClick={() => handleLogout(user)}
+                        data-testid={`reset-whatsapp-${user.id}`}
+                        className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                        title="Clear stuck session"
+                      >
+                        <Power size={18} />
+                      </Button>
+                    )}
+                    <Button
+                      onClick={() => handleStartSession(user)}
+                      data-testid={`setup-whatsapp-${user.id}`}
+                      className="bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+                    >
+                      <QrCode size={18} weight="bold" className="mr-1" />
+                      {status.hasQR ? 'Retry' : 'Setup'}
+                    </Button>
+                  </div>
                 )}
               </div>
             </Card>
