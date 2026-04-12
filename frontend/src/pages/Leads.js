@@ -941,8 +941,8 @@ const Leads = ({ user }) => {
                         <SelectValue placeholder="Select consultant" />
                       </SelectTrigger>
                       <SelectContent className="bg-zinc-900 border-zinc-800">
-                        {users.map(u => (
-                          <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                        {users.filter(u => u.active && ['consultant', 'sales_manager', 'club_manager', 'admin'].includes(u.role)).map(u => (
+                          <SelectItem key={u.id} value={u.id}>{u.name} ({u.role === 'sales_manager' ? 'Manager' : u.role === 'club_manager' ? 'Club Mgr' : u.role === 'admin' ? 'Admin' : 'Consultant'})</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -950,18 +950,19 @@ const Leads = ({ user }) => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">T/O By</Label>
+                    <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">T/O By (Take Over - Optional)</Label>
                     <Select
-                      value={dealData.to_by}
-                      onValueChange={(value) => setDealData({ ...dealData, to_by: value })}
+                      value={dealData.to_by || 'none'}
+                      onValueChange={(value) => setDealData({ ...dealData, to_by: value === 'none' ? '' : value })}
                       data-testid="to-by-select"
                     >
                       <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50">
-                        <SelectValue placeholder="Select user" />
+                        <SelectValue placeholder="None (closed independently)" />
                       </SelectTrigger>
                       <SelectContent className="bg-zinc-900 border-zinc-800">
-                        {users.map(u => (
-                          <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                        <SelectItem value="none">None (closed independently)</SelectItem>
+                        {users.filter(u => u.active && ['consultant', 'sales_manager', 'club_manager', 'admin'].includes(u.role)).map(u => (
+                          <SelectItem key={u.id} value={u.id}>{u.name} ({u.role === 'sales_manager' ? 'Manager' : u.role === 'club_manager' ? 'Club Mgr' : u.role === 'admin' ? 'Admin' : 'Consultant'})</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

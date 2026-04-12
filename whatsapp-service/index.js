@@ -4,7 +4,7 @@ const express = require('express');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const axios = require('axios');
-const { useMongoAuthState } = require('./mongoAuth');
+const { useMongoAuthState, clearAuthState } = require('./mongoAuth');
 
 const app = express();
 app.use(express.json());
@@ -156,12 +156,13 @@ function getSessionStatus(userId) {
 async function logoutSession(userId) {
     const sock = sessions.get(userId);
     if (sock) {
-        await sock.logout();
+        try { await sock.logout(); } catch(e) { /* may already be disconnected */ }
         sessions.delete(userId);
         qrCodes.delete(userId);
-        return { success: true, message: 'Logged out successfully' };
     }
-    return { success: false, message: 'No active session' };
+    // Clear auth files so next activation starts fresh
+    clearAuthState(userId);
+    return { success: true, message: 'Session ended and auth cleared' };
 }
 
 // API Routes
@@ -184,6 +185,14 @@ app.post('/disconnect/:userId', (req, res) => {
     qrCodes.delete(req.params.userId);
     reconnectAttempts.delete(req.params.userId);
     res.json({ success: true, message: 'Session disconnected' });
+});
+
+// End Session - clears all auth data for a fresh start
+app.post('/logout', async (req, res) => {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const result = await logoutSession(userId);
+    res.json(result);
 });
 
 app.get('/status/:userId', (req, res) => res.json(getSessionStatus(req.params.userId)));

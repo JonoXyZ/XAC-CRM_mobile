@@ -415,7 +415,6 @@ async def delete_user(user_id: str, current_user: dict = Depends(get_current_use
 @api_router.post("/leads", response_model=LeadResponse)
 async def create_lead(lead_data: LeadCreate, current_user: dict = Depends(get_current_user)):
     consultant = await get_next_consultant_for_assignment()
-    consultant = await get_next_consultant_for_assignment()
     
     lead_doc = {
         "name": lead_data.name,
@@ -426,6 +425,7 @@ async def create_lead(lead_data: LeadCreate, current_user: dict = Depends(get_cu
         "campaign": lead_data.campaign or None,
         "stage": LeadStage.NEW_LEAD,
         "owner_id": str(consultant["_id"]) if consultant else None,
+        "created_by": str(current_user["_id"]),
         "tags": lead_data.tags,
         "notes": lead_data.notes,
         "form_answers": lead_data.form_answers,
@@ -469,7 +469,22 @@ async def get_leads(
     query = {}
     
     if current_user["role"] == UserRole.CONSULTANT:
-        query["owner_id"] = str(current_user["_id"])
+        my_id = str(current_user["_id"])
+        # Find assistants linked to this consultant
+        linked_assistants = await db.users.find({
+            "role": UserRole.ASSISTANT,
+            "linked_consultants": my_id,
+            "active": True
+        }).to_list(100)
+        assistant_ids = [str(a["_id"]) for a in linked_assistants]
+        # Show leads owned by this consultant OR created by their linked assistants
+        if assistant_ids:
+            query["$or"] = [
+                {"owner_id": my_id},
+                {"created_by": {"$in": assistant_ids}}
+            ]
+        else:
+            query["owner_id"] = my_id
     elif current_user["role"] == UserRole.ASSISTANT:
         linked = current_user.get("linked_consultants", [])
         if linked:
@@ -635,6 +650,90 @@ async def reassign_lead(lead_id: str, new_owner_id: str, current_user: dict = De
     })
     
     return {"success": True}
+
+@api_router.post("/leads/fetch-check")
+async def fetch_check_leads(current_user: dict = Depends(get_current_user)):
+    """Check all sources for new leads - Meta webhooks, pending imports, etc."""
+    new_leads = 0
+    sources_checked = []
+    
+    # 1. Check Meta webhook logs for any unprocessed entries
+    unprocessed = await db.webhook_logs.find({"status": {"$ne": "processed"}}).to_list(100)
+    meta_found = 0
+    for log in unprocessed:
+        try:
+            payload = log.get("payload", {})
+            for entry in payload.get("entry", []):
+                for change in entry.get("changes", []):
+                    value = change.get("value", {})
+                    field_data = value.get("field_data", [])
+                    name, phone, email = "Meta Lead", "", ""
+                    for field in field_data:
+                        fname = field.get("name", "").lower()
+                        vals = field.get("values", [])
+                        if fname in ["full_name", "name"] and vals:
+                            name = vals[0]
+                        elif fname in ["phone_number", "phone"] and vals:
+                            phone = vals[0]
+                        elif fname in ["email"] and vals:
+                            email = vals[0]
+                    
+                    existing = None
+                    if phone or email:
+                        or_conditions = []
+                        if phone:
+                            or_conditions.append({"phone": phone})
+                        if email:
+                            or_conditions.append({"email": email})
+                        existing = await db.leads.find_one({"$or": or_conditions})
+                    
+                    if not existing:
+                        lead_doc = {
+                            "name": name,
+                            "phone": phone,
+                            "email": email or None,
+                            "source": "Meta Ads",
+                            "stage": "New Lead",
+                            "owner_id": None,
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "notes": "Auto-imported from Meta fetch-check"
+                        }
+                        await db.leads.insert_one(lead_doc)
+                        new_leads += 1
+                        meta_found += 1
+            
+            await db.webhook_logs.update_one(
+                {"_id": log["_id"]},
+                {"$set": {"status": "processed"}}
+            )
+        except Exception as e:
+            logger.error(f"Error processing webhook log: {e}")
+    sources_checked.append({"source": "Meta Ads", "checked": True, "found": meta_found})
+    
+    # 2. Check for any leads without an owner (unassigned) - auto round-robin
+    unassigned_count = await db.leads.count_documents({"owner_id": None})
+    if unassigned_count > 0:
+        consultants = await db.users.find({"role": "consultant", "active": True}).to_list(100)
+        if consultants:
+            unassigned_leads = await db.leads.find({"owner_id": None}).to_list(100)
+            for i, lead in enumerate(unassigned_leads):
+                consultant = consultants[i % len(consultants)]
+                await db.leads.update_one(
+                    {"_id": lead["_id"]},
+                    {"$set": {"owner_id": str(consultant["_id"])}}
+                )
+    sources_checked.append({"source": "Round-Robin", "assigned": unassigned_count})
+    
+    total_leads = await db.leads.count_documents({})
+    
+    return {
+        "success": True,
+        "new_leads": new_leads,
+        "unassigned_fixed": unassigned_count,
+        "total_leads": total_leads,
+        "sources_checked": sources_checked
+    }
+
 
 @api_router.post("/activities")
 async def create_activity(activity: ActivityCreate, current_user: dict = Depends(get_current_user)):
@@ -1117,11 +1216,31 @@ async def get_appointments(
         query["scheduled_at"] = {"$regex": f"^{date}"}
     
     if current_user["role"] == UserRole.CONSULTANT:
-        lead_ids = await db.leads.find(
-            {"owner_id": str(current_user["_id"])},
+        my_id = str(current_user["_id"])
+        # Get leads owned by this consultant
+        my_lead_ids = await db.leads.find(
+            {"owner_id": my_id},
             {"_id": 1}
         ).to_list(1000)
-        lead_id_strs = [str(lead["_id"]) for lead in lead_ids]
+        lead_id_strs = [str(lead["_id"]) for lead in my_lead_ids]
+        
+        # Also include appointments booked by linked assistants
+        linked_assistants = await db.users.find({
+            "role": UserRole.ASSISTANT,
+            "linked_consultants": my_id,
+            "active": True
+        }).to_list(100)
+        assistant_ids = [str(a["_id"]) for a in linked_assistants]
+        
+        if assistant_ids:
+            # Find leads created by assistants for this consultant
+            assistant_lead_ids = await db.leads.find(
+                {"created_by": {"$in": assistant_ids}},
+                {"_id": 1}
+            ).to_list(1000)
+            lead_id_strs.extend([str(l["_id"]) for l in assistant_lead_ids])
+            lead_id_strs = list(set(lead_id_strs))
+        
         query["lead_id"] = {"$in": lead_id_strs}
     elif current_user["role"] == UserRole.ASSISTANT:
         linked = current_user.get("linked_consultants", [])
@@ -1619,6 +1738,20 @@ async def disconnect_whatsapp(user_id: str, current_user: dict = Depends(get_cur
             return result
     except Exception as e:
         logger.error(f"WhatsApp disconnect error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/whatsapp/end-session")
+async def end_whatsapp_session(user_id: str, current_user: dict = Depends(get_current_user)):
+    """End session completely - clears all auth data for a fresh start."""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can end WhatsApp sessions")
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(f"{WHATSAPP_SERVICE_URL}/logout", json={"userId": user_id})
+            return response.json()
+    except Exception as e:
+        logger.error(f"WhatsApp end session error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

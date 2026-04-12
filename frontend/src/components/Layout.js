@@ -4,6 +4,7 @@ import { BrandingContext } from '../App';
 import { Button } from './ui/button';
 import NotificationBell from './NotificationBell';
 import BugReportButton from './BugReportButton';
+import FetchLeadsButton from './FetchLeadsButton';
 import auth from '../utils/auth';
 import { 
   House, 
@@ -166,6 +167,7 @@ const Layout = ({ children, user }) => {
       <main className="ml-64 flex-1">
         <div className="sticky top-0 z-30 h-14 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50 flex items-center justify-end px-6">
           <div className="flex items-center gap-4">
+            <FetchLeadsButton />
             <BugReportButton />
             <NotificationBell />
             <div className="text-right">

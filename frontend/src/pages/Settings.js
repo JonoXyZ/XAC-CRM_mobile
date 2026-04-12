@@ -456,6 +456,26 @@ const Settings = ({ user }) => {
     }
   };
 
+  const handleEndSession = async (userId) => {
+    if (!window.confirm(`End session and clear all auth data for ${selectedUser?.name}? This will require re-scanning the QR code.`)) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/api/whatsapp/end-session?user_id=${userId}`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success(`Session ended for ${selectedUser?.name}. Click Activate to start fresh.`);
+      setWaSessionStatus({ connected: false, hasQR: false });
+      setWaQrCode(null);
+      setWaPolling(false);
+      setWaLoading(false);
+      if (qrPollRef.current) clearInterval(qrPollRef.current);
+      if (connectionCheckRef.current) clearInterval(connectionCheckRef.current);
+    } catch (error) {
+      console.error('Failed to end WA session:', error);
+      toast.error('Failed to end session');
+    }
+  };
+
   const handleUpdateSettings = async (updates) => {
     try {
       const token = localStorage.getItem('token');
@@ -1454,24 +1474,34 @@ const Settings = ({ user }) => {
                           <p className="text-xs text-zinc-500 text-center">Waiting for scan... This may take a few seconds.</p>
                         </div>
                       ) : (
-                        <Button
-                          onClick={() => handleStartWaSession(selectedUser.id)}
-                          disabled={waLoading || waPolling}
-                          data-testid="wa-activate-button"
-                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2"
-                        >
-                          {waLoading || waPolling ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                              Generating QR Code...
-                            </>
-                          ) : (
-                            <>
-                              <QrCode size={20} weight="bold" />
-                              Activate WhatsApp
-                            </>
-                          )}
-                        </Button>
+                        <div className="space-y-2">
+                          <Button
+                            onClick={() => handleStartWaSession(selectedUser.id)}
+                            disabled={waLoading || waPolling}
+                            data-testid="wa-activate-button"
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2"
+                          >
+                            {waLoading || waPolling ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                                Generating QR Code...
+                              </>
+                            ) : (
+                              <>
+                                <QrCode size={20} weight="bold" />
+                                Activate WhatsApp
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            onClick={() => handleEndSession(selectedUser.id)}
+                            data-testid="wa-end-session-button"
+                            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold flex items-center justify-center gap-2"
+                          >
+                            <Trash size={20} weight="bold" />
+                            End Session
+                          </Button>
+                        </div>
                       )}
                     </>
                   )}
