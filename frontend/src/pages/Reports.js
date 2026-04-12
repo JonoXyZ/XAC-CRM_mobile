@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { Card } from '../components/ui/card';
@@ -23,11 +23,7 @@ const Reports = ({ user }) => {
   const [showReportModal, setShowReportModal] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
 
-  useEffect(() => {
-    fetchMonthReports();
-  }, []);
-
-  const fetchMonthReports = async () => {
+  const fetchMonthReports = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/reports/month-reports`, {
@@ -35,11 +31,15 @@ const Reports = ({ user }) => {
       });
       setMonthReports(response.data);
     } catch (error) {
-      console.error('Failed to fetch month reports');
+      console.error('Failed to fetch month reports:', error);
     } finally {
       setLoadingMonthReports(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchMonthReports();
+  }, [fetchMonthReports]);
 
   const handleExport = async () => {
     if (!fromDate || !toDate) {

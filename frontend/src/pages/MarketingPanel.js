@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -21,14 +21,7 @@ const MarketingPanel = ({ user }) => {
   const [businessType, setBusinessType] = useState('gym');
   const [businessName, setBusinessName] = useState('Revival Fitness Centre');
 
-  useEffect(() => {
-    fetchWebhookLogs();
-    // Load saved landing pages from localStorage
-    const saved = localStorage.getItem('xac_landing_pages');
-    if (saved) setLandingPages(JSON.parse(saved));
-  }, []);
-
-  const fetchWebhookLogs = async () => {
+  const fetchWebhookLogs = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const res = await axios.get(`${API_URL}/api/webhook-logs`, {
@@ -39,7 +32,16 @@ const MarketingPanel = ({ user }) => {
       console.error('Failed to fetch webhook logs:', error);
     }
     finally { setLoading(false); }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchWebhookLogs();
+    const saved = localStorage.getItem('xac_landing_pages');
+    if (saved) {
+      try { setLandingPages(JSON.parse(saved)); }
+      catch (error) { console.error('Failed to parse saved landing pages:', error); }
+    }
+  }, [fetchWebhookLogs]);
 
   const generateLandingPages = async () => {
     setGenerating(true);

@@ -1,61 +1,52 @@
 # XAC CRM - Product Requirements Document
 
 ## Problem Statement
-Build "XAC CRM" – a full-stack gym-focused CRM for Revival Fitness. Key goals include capturing leads (Meta/Website/Manual), round-robin assignment, multi-role access (Admin, Club Manager, Sales Manager, Consultants, Assistants, Marketing Agent), WhatsApp automation (Baileys), appointments scheduling, comprehensive sales/KPI dashboards, deals tracking (Cash/Debit Order), commissions management, and an Admin settings backdoor.
+Build "XAC CRM" – a full-stack gym-focused CRM for Revival Fitness with lead capture, WhatsApp automation, appointments, deals, commissions, multi-role access, and workflow automation.
 
 ## Tech Stack
-- **Frontend**: React, Tailwind CSS, Shadcn UI, Phosphor Icons, BrandingContext
-- **Backend**: FastAPI, Motor (async MongoDB driver), Passlib (bcrypt)
-- **WhatsApp Service**: Node.js, @whiskeysockets/baileys (port 3001)
-- **AI**: OpenAI GPT-4o via Emergent LLM Key (emergentintegrations library)
-- **Database**: MongoDB
+- Frontend: React, Tailwind CSS, Shadcn UI, Phosphor Icons
+- Backend: FastAPI, Motor (async MongoDB), Passlib (bcrypt)
+- WhatsApp: Node.js, @whiskeysockets/baileys
+- AI: OpenAI GPT-4o via Emergent LLM Key
+- Database: MongoDB
 
-## Implemented Features
+## Implemented Features (All Working)
+- Role-based auth (Admin, Club Manager, Sales Manager, Consultant, Assistant, Marketing Agent)
+- Lead pipeline (Kanban + Table, color-coded stages, Call buttons, WhatsApp)
+- Appointments with action buttons (Call, Send Pin, Send Reminder, Follow Up)
+- Deals, Commission Dashboard, Configurable Earnings Scale
+- WhatsApp multi-session (.appointment, .XACPASS triggers)
+- Meta/Facebook Lead Ads webhook (active)
+- Workflow Builder, Marketing Panel, Bug Report system
+- Landing Page with portal gate (RFC911)
+- Notification system (in-app + WhatsApp)
+- Contact Us on Login (Xac@Xyzservices.co.za)
 
-### Core CRM
-- [x] Role-based login, lead capture (Manual/Webhook/Meta), round-robin assignment
-- [x] Kanban + Table pipeline with color-coded stages
-- [x] Appointments with action buttons (Call, Send Pin, Send Reminder, Follow Up)
-- [x] Call buttons on leads (Kanban + Table views)
-- [x] Deals tracking, Commission Dashboard, Configurable Earnings Scale
-- [x] Dashboards: Admin, Sales Manager, Consultant, Assistant
+## Code Quality Improvements Applied
 
-### Integrations
-- [x] WhatsApp multi-session (Baileys) with disconnect/cleanup
-- [x] WhatsApp .appointment and .XACPASS triggers
-- [x] AI Writing + Chat Assistant (GPT-4o)
-- [x] Meta/Facebook Lead Ads webhook (active)
+### Round 1 (April 4)
+- Removed hardcoded secrets from meta_webhook_proxy.py and 6 test files
+- Fixed React hooks in Dashboard, Leads, Settings, Appointments, WorkflowBuilder, NotificationBell
+- Fixed empty catch blocks, replaced index keys
 
-### Admin & Marketing
-- [x] Landing Page with company portal gate (RFC911)
-- [x] Notification system (in-app bell + WhatsApp, 7 triggers)
-- [x] Workflow Builder (/workflows) - 3 tabs, 5 step types, CRUD
-- [x] Marketing Panel (/marketing-panel) - Ad Manager + Landing Hooks
-- [x] Bug Report system - header button, WA delivery to 27603245830, admin dashboard
-- [x] Contact Us on Login (Xac@Xyzservices.co.za)
-- [x] Show current password in User Management edit modal
-- [x] Admin Tools, System settings, Message templates, Audit logging
-
-### Code Quality Fixes (April 12, 2026)
-- [x] Removed hardcoded secrets from meta_webhook_proxy.py (env vars)
-- [x] Moved test credentials to environment variables in all 6 test files
-- [x] Fixed WhatsApp service hardcoded BACKEND_URL for deployment
-- [x] Fixed React Hooks missing dependencies (Dashboard, Leads, Settings, Appointments, WorkflowBuilder, NotificationBell) using useCallback
-- [x] Replaced empty catch blocks with proper error logging (NotificationBell, WorkflowBuilder, Settings, MarketingPanel)
-- [x] Replaced array index keys with stable keys (Settings, MarketingForms, MarketingPanel)
-- [x] Deployment health check passed (all blockers resolved)
+### Round 2 (April 12)
+- Fixed remaining hooks: Reports.js, MarketingPanel.js (useCallback + proper deps)
+- Fixed remaining empty catches: MarketingForms.js, App.js
+- Fixed remaining index keys: LandingPage.js (3), MarketingDashboard.js (1)
+- Backend: Refactored get_commission() - extracted _resolve_commission_target(), _get_commission_deals(), _calculate_bonuses(), _find_applicable_rate() helpers
+- Created centralized auth utility (src/utils/auth.js) - token set/get/remove via single module
+- Created logger utility (src/utils/logger.js) - env-based logging levels
+- Updated Login, Layout, App.js to use auth utility for token management
 
 ## Pending / Backlog
-
 ### P1
 - [ ] Dynamic Roles & Permissions Engine
 - [ ] Email integration for password resets
-
 ### P2
 - [ ] WhatsApp conversation log on lead profiles
 - [ ] CSV/XLSX export for Admin dashboards
-- [ ] Auto-clear Kanban Deals Won cron job
-- [ ] Server.py refactoring into modular route files
-
+- [ ] Server.py modular refactoring (routes/)
+- [ ] Component splitting (Settings 1360L, Leads 1160L)
 ### P3
 - [ ] SLA tracking, Package tracking
+- [ ] Auto-clear Kanban Deals Won cron job

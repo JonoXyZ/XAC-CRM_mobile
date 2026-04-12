@@ -357,7 +357,7 @@ const Settings = ({ user }) => {
       if (qrPollRef.current) clearTimeout(qrPollRef.current);
       if (connectionCheckRef.current) clearInterval(connectionCheckRef.current);
     }
-  }, [showEditUserModal, selectedUser]);
+  }, [showEditUserModal, selectedUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchUserWaStatus = async (userId) => {
     try {

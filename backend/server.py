@@ -884,47 +884,31 @@ def calculate_cash_commission(total_value, tiers):
             applicable_pct = tier.get("percentage", 0)
     return total_value * applicable_pct / 100
 
-@api_router.get("/commission")
-async def get_commission(
-    user_id: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
-):
-    # Determine target user
+async def _resolve_commission_target(user_id, current_user):
+    """Resolve which user the commission report is for."""
     if user_id and current_user["role"] == UserRole.ADMIN:
         target_user = await db.users.find_one({"_id": ObjectId(user_id)})
         if not target_user:
             raise HTTPException(status_code=404, detail="User not found")
+        return target_user
     elif current_user["role"] in [UserRole.CONSULTANT, UserRole.ASSISTANT]:
-        target_user = current_user
-        user_id = str(current_user["_id"])
-    else:
-        raise HTTPException(status_code=400, detail="user_id required for admin")
+        return current_user
+    raise HTTPException(status_code=400, detail="user_id required for admin")
 
-    target_id = str(target_user["_id"])
-    earnings = target_user.get("earnings_scale", {})
-
-    # Get current month period
-    settings = await db.settings.find_one({"key": "system_settings"})
-    month_start = settings.get("month_start_date") if settings else None
-    month_end = settings.get("month_end_date") if settings else None
-
-    # Get deals for this consultant in current period
+async def _get_commission_deals(target_id, month_start, month_end):
+    """Fetch and categorize deals for a consultant in a given period."""
     deal_query = {"closed_by": target_id}
     if month_start and month_end:
         deal_query["deal_date"] = {"$gte": month_start, "$lte": month_end}
-
+    
     deals = await db.deals.find(deal_query).to_list(1000)
-
-    # Enrich deals with lead info
     lead_ids = list(set([d["lead_id"] for d in deals]))
     leads_dict = {}
     if lead_ids:
         leads_list = await db.leads.find({"_id": {"$in": [ObjectId(lid) for lid in lead_ids]}}).to_list(1000)
         leads_dict = {str(ld["_id"]): ld for ld in leads_list}
 
-    # Separate deals
-    debit_deals = []
-    cash_deals = []
+    debit_deals, cash_deals = [], []
     for d in deals:
         lead = leads_dict.get(d["lead_id"], {})
         deal_info = {
@@ -943,44 +927,65 @@ async def get_commission(
             debit_deals.append(deal_info)
         elif d["payment_type"] == "Cash":
             cash_deals.append(deal_info)
+    return debit_deals, cash_deals
 
-    # Totals
+def _calculate_bonuses(earnings):
+    """Calculate total bonuses from earnings scale."""
+    bonuses = earnings.get("bonuses", {})
+    club_incentive = bonuses.get("club_incentive", 0) or 0
+    special_bonus = bonuses.get("special_bonus", 0) or 0
+    extra_incentives = bonuses.get("incentives", [])
+    total_incentives = sum((inc.get("value", 0) or 0) for inc in extra_incentives)
+    return {
+        "club_incentive": club_incentive,
+        "special_bonus": special_bonus,
+        "incentives": extra_incentives,
+        "total": club_incentive + special_bonus + total_incentives
+    }
+
+def _find_applicable_rate(total_amount, tiers, amount_key="min_units", rate_key="rate"):
+    """Find the applicable tier rate for a given amount."""
+    rate = 0
+    for tier in sorted(tiers, key=lambda t: t.get(amount_key, 0)):
+        if total_amount >= tier.get(amount_key, 0):
+            rate = tier.get(rate_key, 0)
+    return rate
+
+@api_router.get("/commission")
+async def get_commission(
+    user_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    target_user = await _resolve_commission_target(user_id, current_user)
+    target_id = str(target_user["_id"])
+    earnings = target_user.get("earnings_scale", {})
+
+    settings = await db.settings.find_one({"key": "system_settings"})
+    month_start = settings.get("month_start_date") if settings else None
+    month_end = settings.get("month_end_date") if settings else None
+
+    debit_deals, cash_deals = await _get_commission_deals(target_id, month_start, month_end)
+
     total_debit_units = sum(d["units"] for d in debit_deals)
     total_cash_value = sum((d["sales_value"] or 0) for d in cash_deals)
     total_joining_fees = sum((d.get("joining_fee") or 0) for d in debit_deals)
     total_debit_value = sum((d.get("debit_order_value") or 0) for d in debit_deals)
 
-    # Commission calculations
     debit_tiers = earnings.get("debit_order_tiers", [])
     cash_tiers = earnings.get("cash_sales_tiers", [])
     basic_salary = earnings.get("basic_salary", 0) or 0
 
     debit_commission = calculate_debit_commission(total_debit_units, debit_tiers)
     cash_commission = calculate_cash_commission(total_cash_value, cash_tiers)
+    bonuses = _calculate_bonuses(earnings)
 
-    # Bonuses
-    bonuses = earnings.get("bonuses", {})
-    club_incentive = bonuses.get("club_incentive", 0) or 0
-    special_bonus = bonuses.get("special_bonus", 0) or 0
-    extra_incentives = bonuses.get("incentives", [])
-    total_incentives = sum((inc.get("value", 0) or 0) for inc in extra_incentives)
-    total_bonuses = club_incentive + special_bonus + total_incentives
+    earnings_mtd = basic_salary + debit_commission + cash_commission + bonuses["total"]
 
-    earnings_mtd = basic_salary + debit_commission + cash_commission + total_bonuses
-
-    # Income goal
     goal_doc = await db.commission_goals.find_one({"user_id": target_id, "period_start": month_start})
     income_goal = goal_doc["goal"] if goal_doc else 0
 
-    # Find applicable tier info for PDF footer
-    debit_rate = 0
-    for tier in sorted(debit_tiers, key=lambda t: t.get("min_units", 0)):
-        if total_debit_units >= tier.get("min_units", 0):
-            debit_rate = tier.get("rate", 0)
-    cash_pct = 0
-    for tier in sorted(cash_tiers, key=lambda t: t.get("min_value", 0)):
-        if total_cash_value >= tier.get("min_value", 0):
-            cash_pct = tier.get("percentage", 0)
+    debit_rate = _find_applicable_rate(total_debit_units, debit_tiers, "min_units", "rate")
+    cash_pct = _find_applicable_rate(total_cash_value, cash_tiers, "min_value", "percentage")
 
     return {
         "consultant_name": target_user["name"],
@@ -990,11 +995,11 @@ async def get_commission(
         "basic_salary": basic_salary,
         "debit_commission": round(debit_commission, 2),
         "cash_commission": round(cash_commission, 2),
-        "total_bonuses": round(total_bonuses, 2),
+        "total_bonuses": round(bonuses["total"], 2),
         "bonuses_detail": {
-            "club_incentive": club_incentive,
-            "special_bonus": special_bonus,
-            "incentives": extra_incentives
+            "club_incentive": bonuses["club_incentive"],
+            "special_bonus": bonuses["special_bonus"],
+            "incentives": bonuses["incentives"]
         },
         "earnings_mtd": round(earnings_mtd, 2),
         "income_goal": income_goal,

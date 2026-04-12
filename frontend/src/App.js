@@ -17,6 +17,7 @@ import Settings from './pages/Settings';
 import WorkflowBuilder from './pages/WorkflowBuilder';
 import MarketingPanel from './pages/MarketingPanel';
 import BugReports from './pages/BugReports';
+import auth from './utils/auth';
 import FloatingChatButton from './components/FloatingChatButton';
 import { Toaster } from './components/ui/sonner';
 import './App.css';
@@ -48,14 +49,15 @@ function App() {
             appName: res.data.app_name || 'XAC CRM'
           });
         }
-      } catch { /* use defaults */ }
+      } catch (error) {
+        console.error('Failed to load branding:', error);
+      }
     };
     loadBranding();
   }, []);
 
   const ProtectedRoute = ({ children }) => {
-    const token = localStorage.getItem('token');
-    return token ? children : <Navigate to="/login" replace />;
+    return auth.isAuthenticated() ? children : <Navigate to="/login" replace />;
   };
 
   return (

@@ -7,6 +7,7 @@ import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 import { Barbell } from '@phosphor-icons/react';
 import { BrandingContext } from '../App';
+import auth from '../utils/auth';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -29,7 +30,7 @@ const Login = ({ setUser }) => {
         password
       });
 
-      localStorage.setItem('token', response.data.token);
+      auth.setToken(response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
       setUser(response.data.user);
       

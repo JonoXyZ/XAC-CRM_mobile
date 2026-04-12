@@ -145,7 +145,7 @@ const MarketingDashboard = ({ user }) => {
                     </thead>
                     <tbody>
                       {stats.top_forms.map((f, idx) => (
-                        <tr key={idx} className="border-t border-zinc-800/50 hover:bg-zinc-800/30">
+                        <tr key={f.name || `form-${idx}`} className="border-t border-zinc-800/50 hover:bg-zinc-800/30">
                           <td className="p-3 font-semibold text-zinc-100">{f.name}</td>
                           <td className={`p-3 ${platformColor(f.platform)} font-bold uppercase text-xs`}>{f.platform}</td>
                           <td className="p-3 text-zinc-300">{f.leads}</td>

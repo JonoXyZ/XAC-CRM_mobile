@@ -78,7 +78,9 @@ const MarketingForms = ({ user }) => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setGallery(res.data);
-    } catch { /* ignore */ }
+    } catch (error) {
+      console.error('Failed to fetch gallery:', error);
+    }
   };
 
   const openCreateForm = () => {
@@ -136,7 +138,8 @@ const MarketingForms = ({ user }) => {
       });
       toast.success('Form deleted');
       fetchForms();
-    } catch {
+    } catch (error) {
+      console.error('Failed to delete form:', error);
       toast.error('Failed to delete form');
     }
   };

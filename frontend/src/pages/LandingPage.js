@@ -91,7 +91,7 @@ const LandingPage = () => {
             { value: '24/7', label: 'Auto Lead Capture' },
             { value: 'Real-time', label: 'Commission Tracking' }
           ].map((stat, i) => (
-            <div key={i} className="text-center">
+            <div key={`stat-${stat.value}`} className="text-center">
               <div className="text-3xl font-black text-lime-400">{stat.value}</div>
               <div className="text-sm text-zinc-500 mt-1">{stat.label}</div>
             </div>
@@ -115,7 +115,7 @@ const LandingPage = () => {
             { title: 'Smart Notifications', desc: 'In-app bell + WhatsApp push for every event. New leads, appointments, stage changes, deal closures — nothing gets missed.', color: 'from-red-500 to-pink-500' },
             { title: 'Multi-Role Access', desc: 'Admin, Sales Manager, Consultant, Assistant, Marketing Agent — each role sees exactly what they need.', color: 'from-purple-500 to-violet-500' }
           ].map((f, i) => (
-            <div key={i} className="p-6 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors group">
+            <div key={`feature-${f.title}`} className="p-6 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors group">
               <div className={`w-12 h-1.5 rounded-full bg-gradient-to-r ${f.color} mb-4`} />
               <h3 className="text-xl font-bold text-zinc-100 mb-2">{f.title}</h3>
               <p className="text-sm text-zinc-400 leading-relaxed">{f.desc}</p>
@@ -135,7 +135,7 @@ const LandingPage = () => {
               { step: '03', title: 'Engage', desc: 'WhatsApp messages, appointments, follow-ups — all tracked in the pipeline.' },
               { step: '04', title: 'Close', desc: 'Record deals, track commissions, generate month-end reports. Done.' }
             ].map((s, i) => (
-              <div key={i} className="relative">
+              <div key={`step-${s.step}`} className="relative">
                 <div className="text-6xl font-black text-zinc-800/50 mb-4">{s.step}</div>
                 <h3 className="text-lg font-bold text-lime-400 mb-2">{s.title}</h3>
                 <p className="text-sm text-zinc-400">{s.desc}</p>

@@ -4,6 +4,7 @@ import { BrandingContext } from '../App';
 import { Button } from './ui/button';
 import NotificationBell from './NotificationBell';
 import BugReportButton from './BugReportButton';
+import auth from '../utils/auth';
 import { 
   House, 
   Users, 
@@ -27,7 +28,7 @@ const Layout = ({ children, user }) => {
   const location = useLocation();
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
+    auth.removeToken();
     localStorage.removeItem('user');
     navigate('/');
   };
