@@ -75,7 +75,7 @@ const EarningsScaleEditor = ({ selectedUser: su, setSelectedUser: setSU }) => {
       <div className="space-y-2">
         <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Debit Orders Commission (R per unit)</Label>
         {debitTiers.map((tier, idx) => (
-          <div key={idx} className="flex items-center gap-2">
+          <div key={`debit-${tier.min_units}-${tier.max_units}`} className="flex items-center gap-2">
             <span className="text-xs text-zinc-400 w-24 shrink-0">{tier.min_units}{tier.max_units < 999 ? `-${tier.max_units}` : '+'} units</span>
             <Input
               type="number"
@@ -112,7 +112,7 @@ const EarningsScaleEditor = ({ selectedUser: su, setSelectedUser: setSU }) => {
       <div className="space-y-2">
         <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Cash Sales Commission (%)</Label>
         {cashTiers.map((tier, idx) => (
-          <div key={idx} className="flex items-center gap-2">
+          <div key={`cash-${tier.min_value}`} className="flex items-center gap-2">
             <span className="text-xs text-zinc-400 w-24 shrink-0">R{tier.min_value.toLocaleString()}+</span>
             <Input
               type="number"
@@ -160,7 +160,7 @@ const EarningsScaleEditor = ({ selectedUser: su, setSelectedUser: setSU }) => {
           />
         </div>
         {(bonuses.incentives || []).map((inc, idx) => (
-          <div key={idx} className="flex items-center gap-2">
+          <div key={`incentive-${idx}-${inc.name || ''}`} className="flex items-center gap-2">
             <Input
               value={inc.name || ''}
               onChange={(e) => {
@@ -224,7 +224,8 @@ const WhatsAppStatusBadge = ({ userId }) => {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStatus(res.data.connected);
-      } catch {
+      } catch (error) {
+        console.error('WA status check failed:', error);
         setStatus(false);
       }
     };
@@ -282,9 +283,9 @@ const Settings = ({ user }) => {
     }
     fetchMessageTemplates();
     checkWhatsAppStatus();
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/settings`, {
@@ -292,11 +293,11 @@ const Settings = ({ user }) => {
       });
       setSettings(response.data);
     } catch (error) {
-      console.error('Failed to fetch settings');
+      console.error('Failed to fetch settings:', error);
     }
-  };
+  }, []);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/users`, {
@@ -304,11 +305,11 @@ const Settings = ({ user }) => {
       });
       setUsers(response.data);
     } catch (error) {
-      console.error('Failed to fetch users');
+      console.error('Failed to fetch users:', error);
     }
-  };
+  }, []);
 
-  const fetchMessageTemplates = async () => {
+  const fetchMessageTemplates = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/message-templates`, {
@@ -316,11 +317,11 @@ const Settings = ({ user }) => {
       });
       setMessageTemplates(response.data);
     } catch (error) {
-      console.error('Failed to fetch message templates');
+      console.error('Failed to fetch message templates:', error);
     }
-  };
+  }, []);
 
-  const checkWhatsAppStatus = async () => {
+  const checkWhatsAppStatus = useCallback(async () => {
     setCheckingWhatsApp(true);
     try {
       const token = localStorage.getItem('token');
@@ -333,7 +334,7 @@ const Settings = ({ user }) => {
     } finally {
       setCheckingWhatsApp(false);
     }
-  };
+  }, []);
 
   // Cleanup polling on unmount or modal close
   useEffect(() => {
@@ -365,7 +366,8 @@ const Settings = ({ user }) => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setWaSessionStatus(response.data);
-    } catch {
+    } catch (error) {
+      console.error('Failed to fetch WA session status:', error);
       setWaSessionStatus({ connected: false, hasQR: false });
     }
   };
@@ -379,7 +381,8 @@ const Settings = ({ user }) => {
         headers: { Authorization: `Bearer ${token}` }
       });
       startQRPolling(userId);
-    } catch {
+    } catch (error) {
+      console.error('Failed to start WA session:', error);
       toast.error('Failed to start WhatsApp session');
       setWaLoading(false);
     }
@@ -409,7 +412,7 @@ const Settings = ({ user }) => {
           startConnectionCheck(userId);
           return;
         }
-      } catch { /* QR not ready yet */ }
+      } catch (error) { /* QR not ready yet - expected during polling */ }
       attempts++;
       qrPollRef.current = setTimeout(pollQR, 1500);
     };
@@ -429,7 +432,7 @@ const Settings = ({ user }) => {
           setWaSessionStatus(response.data);
           toast.success(`WhatsApp connected for ${selectedUser?.name}!`);
         }
-      } catch { /* ignore */ }
+      } catch (error) { /* Connection check pending - expected during polling */ }
     }, 2500);
     // Stop after 2 minutes
     setTimeout(() => {
@@ -447,7 +450,8 @@ const Settings = ({ user }) => {
       toast.success(`WhatsApp disconnected for ${selectedUser?.name}`);
       setWaSessionStatus({ connected: false, hasQR: false });
       setWaQrCode(null);
-    } catch {
+    } catch (error) {
+      console.error('Failed to disconnect WA:', error);
       toast.error('Failed to disconnect WhatsApp');
     }
   };

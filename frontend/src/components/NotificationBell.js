@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { Bell, Check, X } from '@phosphor-icons/react';
 
@@ -21,7 +21,7 @@ const NotificationBell = () => {
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef(null);
 
-  const fetchUnreadCount = async () => {
+  const fetchUnreadCount = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
@@ -29,8 +29,10 @@ const NotificationBell = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setUnreadCount(res.data.count);
-    } catch (e) { /* silent */ }
-  };
+    } catch (e) {
+      console.error('Failed to fetch unread count:', e);
+    }
+  }, []);
 
   const fetchNotifications = async () => {
     setLoading(true);
@@ -40,7 +42,9 @@ const NotificationBell = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setNotifications(res.data);
-    } catch (e) { /* silent */ }
+    } catch (e) {
+      console.error('Failed to fetch notifications:', e);
+    }
     setLoading(false);
   };
 
@@ -52,7 +56,9 @@ const NotificationBell = () => {
       });
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
       setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch (e) { /* silent */ }
+    } catch (e) {
+      console.error('Failed to mark notification read:', e);
+    }
   };
 
   const markAllRead = async () => {
@@ -63,14 +69,16 @@ const NotificationBell = () => {
       });
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnreadCount(0);
-    } catch (e) { /* silent */ }
+    } catch (e) {
+      console.error('Failed to mark all notifications read:', e);
+    }
   };
 
   useEffect(() => {
     fetchUnreadCount();
     const interval = setInterval(fetchUnreadCount, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchUnreadCount]);
 
   useEffect(() => {
     if (isOpen) fetchNotifications();

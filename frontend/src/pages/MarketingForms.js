@@ -272,7 +272,7 @@ const MarketingForms = ({ user }) => {
                           <p className="text-xs font-bold text-zinc-500 uppercase mb-2">Questions ({form.questions.length})</p>
                           <div className="space-y-1">
                             {form.questions.map((q, idx) => (
-                              <div key={idx} className="flex items-center gap-2 text-sm">
+                              <div key={`q-${idx}-${q.question?.substring(0,10)}`} className="flex items-center gap-2 text-sm">
                                 <span className="text-zinc-500 w-5">{idx + 1}.</span>
                                 <span className="text-zinc-300">{q.question}</span>
                                 <span className="text-xs px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-400 ml-auto">{q.answer_type}</span>
@@ -364,7 +364,7 @@ const MarketingForms = ({ user }) => {
               <div className="space-y-3">
                 <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Questions</Label>
                 {formData.questions.map((q, idx) => (
-                  <div key={idx} className="p-3 bg-zinc-950 rounded-md border border-zinc-800 space-y-2">
+                  <div key={`edit-q-${idx}`} className="p-3 bg-zinc-950 rounded-md border border-zinc-800 space-y-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-zinc-500 w-5">{idx + 1}.</span>
                       <Input

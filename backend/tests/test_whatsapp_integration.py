@@ -8,9 +8,9 @@ import os
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
-# Test credentials
-ADMIN_EMAIL = "admin@revivalfitness.com"
-ADMIN_PASSWORD = "Admin@2026"
+# Test credentials from environment
+ADMIN_EMAIL = os.environ.get('TEST_ADMIN_EMAIL', 'admin@revivalfitness.com')
+ADMIN_PASSWORD = os.environ.get('TEST_ADMIN_PASSWORD', 'Admin@2026')
 CONSULTANT_USER_ID = "69cbf97c38323e0e80748fb0"  # Joanthan
 
 

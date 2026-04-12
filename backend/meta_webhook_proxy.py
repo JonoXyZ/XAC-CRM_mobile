@@ -9,12 +9,13 @@ import json
 import urllib.request
 import logging
 import sys
+import os
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger('meta-webhook')
 
-VERIFY_TOKEN = "xac_crm_meta_verify"
-CRM_BACKEND = "http://localhost:8001/api/webhooks/meta"
+VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN", "xac_crm_meta_verify")
+CRM_BACKEND = os.environ.get("CRM_BACKEND_URL", "http://localhost:8001/api/webhooks/meta")
 PORT = 8088
 
 class MetaWebhookHandler(BaseHTTPRequestHandler):

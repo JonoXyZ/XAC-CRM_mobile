@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Layout from '../components/Layout';
@@ -25,22 +25,7 @@ const Dashboard = ({ user }) => {
 
   const isAssistant = user?.role === 'assistant';
 
-  useEffect(() => {
-    // Redirect marketing agents to their dashboard
-    if (user?.role === 'marketing_agent') {
-      navigate('/marketing');
-      return;
-    }
-    if (isAssistant) {
-      fetchAssistantStats();
-    } else {
-      fetchStats();
-      fetchTodayAppointments();
-    }
-    fetchSettings();
-  }, []);
-
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/dashboard/stats`, {
@@ -52,9 +37,9 @@ const Dashboard = ({ user }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchAssistantStats = async () => {
+  const fetchAssistantStats = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/dashboard/assistant-stats`, {
@@ -66,9 +51,9 @@ const Dashboard = ({ user }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchTodayAppointments = async () => {
+  const fetchTodayAppointments = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const today = new Date().toISOString().split('T')[0];
@@ -79,9 +64,9 @@ const Dashboard = ({ user }) => {
     } catch (error) {
       console.error('Failed to fetch appointments:', error);
     }
-  };
+  }, []);
 
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/settings`, {
@@ -97,7 +82,21 @@ const Dashboard = ({ user }) => {
     } catch (error) {
       console.error('Failed to fetch settings:', error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (user?.role === 'marketing_agent') {
+      navigate('/marketing');
+      return;
+    }
+    if (isAssistant) {
+      fetchAssistantStats();
+    } else {
+      fetchStats();
+      fetchTodayAppointments();
+    }
+    fetchSettings();
+  }, [user, isAssistant, navigate, fetchAssistantStats, fetchStats, fetchTodayAppointments, fetchSettings]);
 
   const handleUpdatePeriod = async (e) => {
     e.preventDefault();

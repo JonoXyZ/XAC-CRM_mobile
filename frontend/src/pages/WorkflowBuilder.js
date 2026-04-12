@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -54,28 +54,33 @@ const WorkflowBuilder = ({ user }) => {
   useEffect(() => {
     fetchWorkflows();
     fetchUsers();
-  }, []);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fetchWorkflows = async () => {
+  const fetchWorkflows = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const res = await axios.get(`${API_URL}/api/workflows`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setWorkflows(res.data);
-    } catch { toast.error('Failed to load workflows'); }
+    } catch (error) {
+      console.error('Failed to load workflows:', error);
+      toast.error('Failed to load workflows');
+    }
     finally { setLoading(false); }
-  };
+  }, []);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const res = await axios.get(`${API_URL}/api/users`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setUsers(res.data.filter(u => u.active));
-    } catch {}
-  };
+    } catch (error) {
+      console.error('Failed to load users:', error);
+    }
+  }, []);
 
   const openNewBuilder = (triggerType) => {
     setEditingWorkflow(null);
@@ -149,7 +154,10 @@ const WorkflowBuilder = ({ user }) => {
       }
       setShowBuilder(false);
       fetchWorkflows();
-    } catch { toast.error('Failed to save workflow'); }
+    } catch (error) {
+      console.error('Failed to save workflow:', error);
+      toast.error('Failed to save workflow');
+    }
   };
 
   const handleDelete = async (id) => {
@@ -161,7 +169,10 @@ const WorkflowBuilder = ({ user }) => {
       });
       toast.success('Workflow deleted');
       fetchWorkflows();
-    } catch { toast.error('Failed to delete'); }
+    } catch (error) {
+      console.error('Failed to delete workflow:', error);
+      toast.error('Failed to delete');
+    }
   };
 
   const handleToggle = async (wf) => {
@@ -171,7 +182,10 @@ const WorkflowBuilder = ({ user }) => {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchWorkflows();
-    } catch { toast.error('Failed to toggle'); }
+    } catch (error) {
+      console.error('Failed to toggle workflow:', error);
+      toast.error('Failed to toggle');
+    }
   };
 
   const filteredWorkflows = (type) => workflows.filter(w => w.trigger_type === type);

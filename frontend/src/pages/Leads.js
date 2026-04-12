@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import Layout from '../components/Layout';
@@ -96,19 +96,21 @@ const Leads = ({ user }) => {
     fetchLeads();
     fetchUsers();
     fetchMessageTemplates();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fetchMessageTemplates = async () => {
+  const fetchMessageTemplates = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/message-templates`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessageTemplates(response.data);
-    } catch { /* ignore */ }
-  };
+    } catch (error) {
+      console.error('Failed to fetch templates:', error);
+    }
+  }, []);
 
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/leads`, {
@@ -120,9 +122,9 @@ const Leads = ({ user }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/users`, {
@@ -130,9 +132,9 @@ const Leads = ({ user }) => {
       });
       setUsers(response.data);
     } catch (error) {
-      console.error('Failed to fetch users');
+      console.error('Failed to fetch users:', error);
     }
-  };
+  }, []);
 
   const handleCreateLead = async (e) => {
     e.preventDefault();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -44,9 +44,9 @@ const Appointments = ({ user }) => {
 
   useEffect(() => {
     fetchAppointments();
-  }, [selectedDate]);
+  }, [selectedDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fetchAppointments = async () => {
+  const fetchAppointments = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/appointments?date=${selectedDate}`, {
@@ -58,7 +58,7 @@ const Appointments = ({ user }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedDate]);
 
   const getDayOfWeek = (dateStr) => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

@@ -35,7 +35,9 @@ const MarketingPanel = ({ user }) => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setWebhookLogs(res.data || []);
-    } catch {}
+    } catch (error) {
+      console.error('Failed to fetch webhook logs:', error);
+    }
     finally { setLoading(false); }
   };
 
@@ -53,7 +55,8 @@ const MarketingPanel = ({ user }) => {
         localStorage.setItem('xac_landing_pages', JSON.stringify(res.data.pages));
         toast.success('Landing pages generated!');
       }
-    } catch {
+    } catch (error) {
+      console.error('AI landing pages endpoint unavailable, using templates:', error);
       // Fallback - generate locally if AI endpoint not available
       const templates = [
         { title: `${businessName} - Transform Your Body`, slug: 'transform', hook: 'Start your fitness journey today. First session FREE!', cta: 'Claim Free Session' },
@@ -163,7 +166,7 @@ const MarketingPanel = ({ user }) => {
                 ) : (
                   <div className="space-y-2 max-h-80 overflow-y-auto">
                     {webhookLogs.slice(0, 20).map((log, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-zinc-900/50 border border-zinc-800 rounded-md" data-testid={`webhook-log-${idx}`}>
+                      <div key={log.id || `log-${idx}`} className="flex items-center justify-between p-3 bg-zinc-900/50 border border-zinc-800 rounded-md" data-testid={`webhook-log-${idx}`}>
                         <div>
                           <p className="text-sm font-semibold text-zinc-200">{log.lead_name || 'Lead'}</p>
                           <p className="text-xs text-zinc-500">{new Date(log.received_at).toLocaleString()}</p>
@@ -225,7 +228,7 @@ const MarketingPanel = ({ user }) => {
               {landingPages.length > 0 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {landingPages.map((page, idx) => (
-                    <Card key={idx} className="stat-card p-5 hover:border-lime-400/30 transition-colors" data-testid={`landing-page-${idx}`}>
+                    <Card key={page.slug || `page-${idx}`} className="stat-card p-5 hover:border-lime-400/30 transition-colors" data-testid={`landing-page-${idx}`}>
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-xs font-bold rounded-full">
