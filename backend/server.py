@@ -445,6 +445,16 @@ async def create_lead(lead_data: LeadCreate, current_user: dict = Depends(get_cu
         "details": {"source": lead_data.source}
     })
     
+    # Log activity for timeline
+    await db.activities.insert_one({
+        "lead_id": lead_doc["id"],
+        "user_id": str(current_user["_id"]),
+        "activity_type": "lead_created",
+        "content": f"Lead created from {lead_data.source}",
+        "notes": None,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
     if consultant:
         owner_name = consultant["name"]
         # Notify consultant: New Lead Assigned
@@ -577,6 +587,16 @@ async def update_lead(lead_id: str, lead_update: LeadUpdate, current_user: dict 
             "user_id": str(current_user["_id"]),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "details": {"from": old_stage, "to": new_stage}
+        })
+        
+        # Log activity for timeline
+        await db.activities.insert_one({
+            "lead_id": lead_id,
+            "user_id": str(current_user["_id"]),
+            "activity_type": "stage_changed",
+            "content": f"Stage changed from {old_stage} to {new_stage}",
+            "notes": None,
+            "created_at": datetime.now(timezone.utc).isoformat()
         })
         
         # Notify lead owner: Stage Changed
@@ -801,6 +821,17 @@ async def create_deal(deal: DealCreate, current_user: dict = Depends(get_current
         {"_id": ObjectId(deal.lead_id)},
         {"$set": {"stage": LeadStage.CLOSED_WON}}
     )
+    
+    # Log activity for timeline
+    deal_value = deal.sales_value or deal.debit_order_value or 0
+    await db.activities.insert_one({
+        "lead_id": deal.lead_id,
+        "user_id": str(current_user["_id"]),
+        "activity_type": "deal_closed",
+        "content": f"Deal closed — {deal.payment_type} R{deal_value}",
+        "notes": None,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
     
     # Notify managers: New Deal Closed
     lead = await db.leads.find_one({"_id": ObjectId(deal.lead_id)})
@@ -1190,6 +1221,17 @@ async def create_appointment(appointment: AppointmentCreate, current_user: dict 
         {"_id": ObjectId(appointment.lead_id)},
         {"$set": {"stage": LeadStage.APPOINTMENT_SET}}
     )
+    
+    # Log activity for timeline
+    sched_display = appointment.scheduled_at.replace("T", " at ")[:16]
+    await db.activities.insert_one({
+        "lead_id": appointment.lead_id,
+        "user_id": str(current_user["_id"]),
+        "activity_type": "appointment_booked",
+        "content": f"Appointment booked for {sched_display}",
+        "notes": appointment.notes,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
     
     # Notify lead owner: New Appointment Booked
     lead = await db.leads.find_one({"_id": ObjectId(appointment.lead_id)})

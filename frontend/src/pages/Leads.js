@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
 import { Plus, Phone, Envelope, Tag, PencilSimple, CalendarPlus, SquaresFour, Table, Star, WhatsappLogo, Trash, PhoneCall } from '@phosphor-icons/react';
+import LeadDetailModal from '../components/LeadDetailModal';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -73,6 +74,7 @@ const Leads = ({ user }) => {
   const [leadScore, setLeadScore] = useState(0);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [messageTemplates, setMessageTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [whatsappMessage, setWhatsappMessage] = useState('');
@@ -260,6 +262,15 @@ const Leads = ({ user }) => {
     window.open(`https://wa.me/${phone}?text=${encodedMessage}`, '_blank');
     toast.success('WhatsApp opened in new tab');
     setShowWhatsAppModal(false);
+    
+    // Log WhatsApp activity
+    const token = localStorage.getItem('token');
+    axios.post(`${API_URL}/api/activities`, {
+      lead_id: selectedLead.id,
+      activity_type: 'whatsapp_sent',
+      content: `WhatsApp message opened for ${selectedLead.name}`,
+      notes: whatsappMessage.substring(0, 200)
+    }, { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
   };
 
   const handleDragEnd = async (result) => {
@@ -416,7 +427,15 @@ const Leads = ({ user }) => {
                               >
                                 <div className="flex justify-between items-start mb-2">
                                   <div className="flex-1">
-                                    <h4 className="font-semibold text-zinc-100">
+                                    <h4 
+                                      className="font-semibold text-zinc-100 cursor-pointer hover:text-lime-400 transition-colors"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedLead(lead);
+                                        setShowDetailModal(true);
+                                      }}
+                                      data-testid={`lead-name-${lead.id}`}
+                                    >
                                       {lead.name} {lead.surname || ''}
                                     </h4>
                                     {lead.score > 0 && (
@@ -560,7 +579,13 @@ const Leads = ({ user }) => {
                 {leads.map((lead) => (
                   <tr key={lead.id} className="border-t border-zinc-800/50 hover:bg-zinc-800/30" data-testid={`table-row-${lead.id}`}>
                     <td className="p-4 font-semibold text-zinc-100">
-                      {lead.name} {lead.surname || ''}
+                      <span 
+                        className="cursor-pointer hover:text-lime-400 transition-colors"
+                        onClick={() => { setSelectedLead(lead); setShowDetailModal(true); }}
+                        data-testid={`table-lead-name-${lead.id}`}
+                      >
+                        {lead.name} {lead.surname || ''}
+                      </span>
                     </td>
                     <td className="p-4 text-zinc-300">{lead.phone}</td>
                     <td className="p-4 text-zinc-300">{lead.email || '-'}</td>
@@ -1178,6 +1203,13 @@ const Leads = ({ user }) => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Lead Detail Modal */}
+      <LeadDetailModal
+        lead={selectedLead}
+        open={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+      />
     </Layout>
   );
 };
