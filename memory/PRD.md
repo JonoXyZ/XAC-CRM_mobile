@@ -1,52 +1,78 @@
 # XAC CRM - Product Requirements Document
 
-## Problem Statement
-Build "XAC CRM" – a full-stack gym-focused CRM for Revival Fitness with lead capture, WhatsApp automation, appointments, deals, commissions, multi-role access, and workflow automation.
+## Original Problem Statement
+Build "XAC CRM" - a full-stack gym-focused CRM for Revival Fitness. Key goals: lead capture (Meta/Website/Manual), round-robin assignment, multi-role access, WhatsApp messaging, appointments scheduling, sales dashboards, deals tracking, commissions management, admin settings, and notifications.
 
-## Tech Stack
-- Frontend: React, Tailwind CSS, Shadcn UI, Phosphor Icons
-- Backend: FastAPI, Motor (async MongoDB), Passlib (bcrypt)
-- WhatsApp: Node.js, @whiskeysockets/baileys
-- AI: OpenAI GPT-4o via Emergent LLM Key
-- Database: MongoDB
+## Architecture
+- **Frontend**: React + Tailwind + Shadcn UI (port 3000)
+- **Backend**: FastAPI + Motor/MongoDB (port 8001)
+- **Database**: MongoDB
+- **WhatsApp**: Simplified to wa.me links (Baileys microservice removed)
 
-## Implemented Features (All Working)
-- Role-based auth (Admin, Club Manager, Sales Manager, Consultant, Assistant, Marketing Agent)
-- Lead pipeline (Kanban + Table, color-coded stages, Call buttons, WhatsApp)
-- Appointments with action buttons (Call, Send Pin, Send Reminder, Follow Up)
-- Deals, Commission Dashboard, Configurable Earnings Scale
-- WhatsApp multi-session (.appointment, .XACPASS triggers)
-- Meta/Facebook Lead Ads webhook (active)
-- Workflow Builder, Marketing Panel, Bug Report system
-- Landing Page with portal gate (RFC911)
-- Notification system (in-app + WhatsApp)
-- Contact Us on Login (Xac@Xyzservices.co.za)
+## Roles
+1. **Admin** - Full access to all features, user management, settings, commission, bug reports
+2. **Management** (sales_manager / club_manager) - Reports, Analytics, Gallery, Leads, Appointments
+3. **Consultant** - Leads, Appointments, Commission, Templates
+4. **Assistant** - Sees/edits linked consultant's leads, appointments, notes. NO access to sales values or commission sheets
 
-## Code Quality Improvements Applied
+## Core Features (Implemented)
+- Login with company gate (RFC911)
+- Role-based dashboards with stat cards
+- Lead pipeline (Kanban + Table view) with drag-and-drop stages
+- Meta/Facebook webhook lead capture
+- Manual lead creation with round-robin assignment
+- Appointments calendar with time slots
+- WhatsApp via wa.me links with consultant-managed message templates
+- Commission tracking and earnings scale per consultant
+- Notification bell system
+- Bug Report System
+- Fetch Check Leads button
+- Contact Us on login page
+- Branding settings (company name, etc.)
+- Month period controls (set/edit period, generate report)
 
-### Round 1 (April 4)
-- Removed hardcoded secrets from meta_webhook_proxy.py and 6 test files
-- Fixed React hooks in Dashboard, Leads, Settings, Appointments, WorkflowBuilder, NotificationBell
-- Fixed empty catch blocks, replaced index keys
+## Simplification (Feb 2026)
+### Removed
+- Workflow Builder UI
+- Marketing Panel / Ad Manager
+- Marketing Dashboard & Forms pages
+- WhatsApp Baileys microservice (replaced with wa.me links)
+- Dashboard charts/graphs (keeping clean stat cards)
+- marketing_agent role from navigation
 
-### Round 2 (April 12)
-- Fixed remaining hooks: Reports.js, MarketingPanel.js (useCallback + proper deps)
-- Fixed remaining empty catches: MarketingForms.js, App.js
-- Fixed remaining index keys: LandingPage.js (3), MarketingDashboard.js (1)
-- Backend: Refactored get_commission() - extracted _resolve_commission_target(), _get_commission_deals(), _calculate_bonuses(), _find_applicable_rate() helpers
-- Created centralized auth utility (src/utils/auth.js) - token set/get/remove via single module
-- Created logger utility (src/utils/logger.js) - env-based logging levels
-- Updated Login, Layout, App.js to use auth utility for token management
+### Kept
+- Bug Report System
+- Fetch Check Leads
+- Notifications
+- Commission sheets
+- Meta webhook integration
+- All 4 roles (Admin, Management, Consultant, Assistant)
+- Message templates per consultant
 
-## Pending / Backlog
+## Key Files
+- `/app/backend/server.py` - Main FastAPI app (~2,900 lines)
+- `/app/frontend/src/App.js` - React routes
+- `/app/frontend/src/components/Layout.js` - Sidebar navigation
+- `/app/frontend/src/pages/Dashboard.js` - Simplified stat cards
+- `/app/frontend/src/pages/Leads.js` - Lead pipeline with wa.me WhatsApp
+- `/app/frontend/src/pages/Appointments.js` - Calendar with wa.me action buttons
+- `/app/frontend/src/pages/Settings.js` - User mgmt, templates, branding, integrations
+- `/app/frontend/src/pages/Commission.js` - Commission dashboard
+- `/app/frontend/src/pages/BugReports.js` - Bug tracking
+
+## Pending/Future Tasks
 ### P1
-- [ ] Dynamic Roles & Permissions Engine
-- [ ] Email integration for password resets
+- Backend `server.py` refactoring into modular routes (~2,900 lines -> routes/)
+- Backend `fetch_check_leads()` cyclomatic complexity reduction
+
 ### P2
-- [ ] WhatsApp conversation log on lead profiles
-- [ ] CSV/XLSX export for Admin dashboards
-- [ ] Server.py modular refactoring (routes/)
-- [ ] Component splitting (Settings 1360L, Leads 1160L)
-### P3
-- [ ] SLA tracking, Package tracking
-- [ ] Auto-clear Kanban Deals Won cron job
+- Dynamic Roles & Permissions Engine
+- WhatsApp conversation log per lead profile
+- CSV/XLSX export for Admin dashboards
+- Split oversized React components (Leads.js, Settings.js)
+- Clean up remaining console.log statements
+- Auto-clear Kanban "Deals Won" via Cron job
+
+## Test Credentials
+- Admin: admin@revivalfitness.com / Admin@2026
+- Company Gate: RFC911
