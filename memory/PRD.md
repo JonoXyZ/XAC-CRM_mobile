@@ -19,6 +19,7 @@ Build "XAC CRM" - a full-stack gym-focused CRM for Revival Fitness. Key goals: l
 - Login with company gate (RFC911)
 - Role-based dashboards with stat cards
 - Lead pipeline (Kanban + Table view) with drag-and-drop stages
+- **Lead Activity Timeline** — Click a lead name to see full detail modal with chronological activity log (auto-tracks: lead creation, stage changes, appointments, deals, WhatsApp messages)
 - Meta/Facebook webhook lead capture
 - Manual lead creation with round-robin assignment
 - Appointments calendar with time slots
