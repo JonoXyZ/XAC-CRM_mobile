@@ -9,13 +9,9 @@ import Appointments from './pages/Appointments';
 import Reports from './pages/Reports';
 import Analytics from './pages/Analytics';
 import Commission from './pages/Commission';
-import MarketingDashboard from './pages/MarketingDashboard';
-import MarketingForms from './pages/MarketingForms';
 import Gallery from './pages/Gallery';
 import EmergentFixes from './pages/EmergentFixes';
 import Settings from './pages/Settings';
-import WorkflowBuilder from './pages/WorkflowBuilder';
-import MarketingPanel from './pages/MarketingPanel';
 import BugReports from './pages/BugReports';
 import auth from './utils/auth';
 import FloatingChatButton from './components/FloatingChatButton';
@@ -125,22 +121,6 @@ function App() {
           }
         />
         <Route
-          path="/marketing"
-          element={
-            <ProtectedRoute>
-              <MarketingDashboard user={user} />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/marketing/forms"
-          element={
-            <ProtectedRoute>
-              <MarketingForms user={user} />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/gallery"
           element={
             <ProtectedRoute>
@@ -153,22 +133,6 @@ function App() {
           element={
             <ProtectedRoute>
               <Settings user={user} />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/workflows"
-          element={
-            <ProtectedRoute>
-              <WorkflowBuilder user={user} />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/marketing-panel"
-          element={
-            <ProtectedRoute>
-              <MarketingPanel user={user} />
             </ProtectedRoute>
           }
         />

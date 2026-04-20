@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { Card } from '../components/ui/card';
@@ -7,14 +6,12 @@ import { Button } from '../components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrendUp, Users, Target, Clock, Calendar, FileText } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Dashboard = ({ user }) => {
-  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [settings, setSettings] = useState(null);
@@ -85,10 +82,6 @@ const Dashboard = ({ user }) => {
   }, []);
 
   useEffect(() => {
-    if (user?.role === 'marketing_agent') {
-      navigate('/marketing');
-      return;
-    }
     if (isAssistant) {
       fetchAssistantStats();
     } else {
@@ -96,7 +89,7 @@ const Dashboard = ({ user }) => {
       fetchTodayAppointments();
     }
     fetchSettings();
-  }, [user, isAssistant, navigate, fetchAssistantStats, fetchStats, fetchTodayAppointments, fetchSettings]);
+  }, [user, isAssistant, fetchAssistantStats, fetchStats, fetchTodayAppointments, fetchSettings]);
 
   const handleUpdatePeriod = async (e) => {
     e.preventDefault();
@@ -127,15 +120,6 @@ const Dashboard = ({ user }) => {
       toast.error(error.response?.data?.detail || 'Failed to generate report');
     }
   };
-
-  const chartData = [
-    { month: 'Jan', sales: 4000 },
-    { month: 'Feb', sales: 3000 },
-    { month: 'Mar', sales: 5000 },
-    { month: 'Apr', sales: 7000 },
-    { month: 'May', sales: 6000 },
-    { month: 'Jun', sales: 8000 },
-  ];
 
   return (
     <Layout user={user}>
@@ -197,7 +181,6 @@ const Dashboard = ({ user }) => {
         {loading ? (
           <div className="text-center py-12 text-zinc-400">Loading stats...</div>
         ) : isAssistant && assistantStats ? (
-          /* ===== ASSISTANT DASHBOARD ===== */
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
               <Card className="stat-card" data-testid="assistant-total-leads-card">
@@ -241,40 +224,6 @@ const Dashboard = ({ user }) => {
               </Card>
             </div>
 
-            {/* Appointment Trend Graph */}
-            <Card className="stat-card p-6" data-testid="appointment-trend-card">
-              <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Appointment Trend</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={assistantStats.appointment_trend || []}>
-                  <defs>
-                    <linearGradient id="colorAppointments" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis dataKey="month" stroke="#71717a" />
-                  <YAxis stroke="#71717a" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#18181b',
-                      border: '1px solid #27272a',
-                      borderRadius: '0.375rem',
-                      color: '#fafafa'
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="appointments"
-                    stroke="#22d3ee"
-                    fillOpacity={1}
-                    fill="url(#colorAppointments)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </Card>
-
-            {/* Appointments Today (under graph) */}
             <Card className="stat-card p-6" data-testid="assistant-today-appointments-card">
               <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Today's Appointments</h3>
               <div className="space-y-3 max-h-60 overflow-y-auto">
@@ -381,56 +330,6 @@ const Dashboard = ({ user }) => {
                 </div>
               </Card>
             </div>
-
-            <Card className="stat-card p-6" data-testid="sales-chart-card">
-              <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Sales Trend</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#bef264" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#bef264" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis dataKey="month" stroke="#71717a" />
-                  <YAxis stroke="#71717a" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#18181b',
-                      border: '1px solid #27272a',
-                      borderRadius: '0.375rem',
-                      color: '#fafafa'
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="sales"
-                    stroke="#bef264"
-                    fillOpacity={1}
-                    fill="url(#colorSales)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </Card>
-
-            <Card className="stat-card p-6" data-testid="recent-activity-card">
-              <h3 className="text-xl sm:text-2xl font-semibold text-zinc-100 mb-4">Recent Activity</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 text-sm text-zinc-300">
-                    <div className="w-2 h-2 rounded-full bg-lime-400"></div>
-                    <span>New lead assigned from Meta campaign</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-zinc-300">
-                    <div className="w-2 h-2 rounded-full bg-cyan-500"></div>
-                    <span>Appointment scheduled for tomorrow</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-zinc-300">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                    <span>Deal closed - R1,500 debit order</span>
-                  </div>
-                </div>
-              </Card>
           </>
         )}
       </div>

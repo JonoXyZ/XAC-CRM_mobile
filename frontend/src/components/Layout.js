@@ -15,11 +15,8 @@ import {
   Robot,
   GearSix, 
   SignOut,
-  Barbell,
   CurrencyCircleDollar,
-  Megaphone,
   Image,
-  FlowArrow,
   Bug
 } from '@phosphor-icons/react';
 
@@ -36,63 +33,44 @@ const Layout = ({ children, user }) => {
 
   const menuItems = [];
 
-  // Marketing agents get their own set of pages
-  if (user?.role === 'marketing_agent') {
+  // Standard CRM pages for all roles
+  menuItems.push(
+    { path: '/dashboard', icon: House, label: 'Dashboard', testId: 'nav-dashboard' },
+    { path: '/leads', icon: Users, label: 'Leads', testId: 'nav-leads' },
+    { path: '/appointments', icon: Calendar, label: 'Appointments', testId: 'nav-appointments' }
+  );
+
+  if (user?.role === 'admin' || user?.role === 'sales_manager') {
     menuItems.push(
-      { path: '/marketing', icon: Megaphone, label: 'Marketing', testId: 'nav-marketing' },
-      { path: '/marketing/forms', icon: FileText, label: 'Forms', testId: 'nav-forms' },
-      { path: '/gallery', icon: Image, label: 'Gallery', testId: 'nav-gallery' }
+      { path: '/reports', icon: FileText, label: 'Reports', testId: 'nav-reports' },
+      { path: '/analytics', icon: ChartBar, label: 'Analytics', testId: 'nav-analytics' }
     );
-  } else {
-    // Standard CRM pages for non-marketing roles
-    menuItems.push(
-      { path: '/dashboard', icon: House, label: 'Dashboard', testId: 'nav-dashboard' },
-      { path: '/leads', icon: Users, label: 'Leads', testId: 'nav-leads' },
-      { path: '/appointments', icon: Calendar, label: 'Appointments', testId: 'nav-appointments' }
-    );
+  }
 
-    if (user?.role === 'admin' || user?.role === 'sales_manager') {
-      menuItems.push(
-        { path: '/reports', icon: FileText, label: 'Reports', testId: 'nav-reports' },
-        { path: '/analytics', icon: ChartBar, label: 'Analytics', testId: 'nav-analytics' },
-        { path: '/workflows', icon: FlowArrow, label: 'Workflows', testId: 'nav-workflows' }
-      );
-    }
+  // Commission visible to admin + consultants (NOT assistants)
+  if (user?.role === 'admin' || user?.role === 'consultant') {
+    menuItems.push({ path: '/commission', icon: CurrencyCircleDollar, label: 'Commission', testId: 'nav-commission' });
+  }
 
-    // Commission visible to admin + consultants
-    if (user?.role === 'admin' || user?.role === 'consultant') {
-      menuItems.push({ path: '/commission', icon: CurrencyCircleDollar, label: 'Commission', testId: 'nav-commission' });
-    }
+  // Gallery for admin + managers
+  if (['admin', 'sales_manager', 'club_manager'].includes(user?.role)) {
+    menuItems.push({ path: '/gallery', icon: Image, label: 'Gallery', testId: 'nav-gallery' });
+  }
 
-    // Admin also gets Marketing + Gallery + Forms + Marketing Panel
-    if (user?.role === 'admin') {
-      menuItems.push(
-        { path: '/marketing', icon: Megaphone, label: 'Marketing', testId: 'nav-marketing' },
-        { path: '/marketing-panel', icon: ChartBar, label: 'Ad Manager', testId: 'nav-marketing-panel' },
-        { path: '/marketing/forms', icon: FileText, label: 'Forms', testId: 'nav-forms' }
-      );
-    }
-
-    // Gallery for admin + managers
-    if (['admin', 'sales_manager', 'club_manager'].includes(user?.role)) {
-      menuItems.push({ path: '/gallery', icon: Image, label: 'Gallery', testId: 'nav-gallery' });
-    }
-
-    if (user?.role === 'admin') {
-      menuItems.push({ 
-        path: '/emergent-fixes', 
-        icon: Robot, 
-        label: 'Emergent Fixes', 
-        testId: 'nav-emergent-fixes',
-        highlight: true 
-      });
-      menuItems.push({
-        path: '/bug-reports',
-        icon: Bug,
-        label: 'Bug Reports',
-        testId: 'nav-bug-reports'
-      });
-    }
+  if (user?.role === 'admin') {
+    menuItems.push({ 
+      path: '/emergent-fixes', 
+      icon: Robot, 
+      label: 'Emergent Fixes', 
+      testId: 'nav-emergent-fixes',
+      highlight: true 
+    });
+    menuItems.push({
+      path: '/bug-reports',
+      icon: Bug,
+      label: 'Bug Reports',
+      testId: 'nav-bug-reports'
+    });
   }
 
   // All users can access settings (for message templates)

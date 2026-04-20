@@ -76,7 +76,6 @@ const Leads = ({ user }) => {
   const [messageTemplates, setMessageTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [whatsappMessage, setWhatsappMessage] = useState('');
-  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
 
   const handleDeleteLead = async (lead) => {
     if (!window.confirm(`Delete lead "${lead.name}"? This will also remove associated deals, activities, and appointments.`)) return;
@@ -247,27 +246,20 @@ const Leads = ({ user }) => {
     }
   };
 
-  const handleSendWhatsApp = async (e) => {
+  const handleSendWhatsApp = (e) => {
     e.preventDefault();
     if (!whatsappMessage.trim() || !selectedLead?.phone) return;
-    setSendingWhatsApp(true);
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/whatsapp/send`, {
-        phone_number: selectedLead.phone,
-        message: whatsappMessage,
-        lead_id: selectedLead.id,
-        template_id: selectedTemplateId || null
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      toast.success('WhatsApp message sent!');
-      setShowWhatsAppModal(false);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to send WhatsApp message');
-    } finally {
-      setSendingWhatsApp(false);
-    }
+    
+    // Clean phone number (remove spaces, dashes, ensure country code)
+    let phone = selectedLead.phone.replace(/[\s\-()]/g, '');
+    if (phone.startsWith('0')) phone = '27' + phone.substring(1); // SA country code
+    if (!phone.startsWith('+') && !phone.startsWith('27')) phone = '27' + phone;
+    phone = phone.replace('+', '');
+    
+    const encodedMessage = encodeURIComponent(whatsappMessage);
+    window.open(`https://wa.me/${phone}?text=${encodedMessage}`, '_blank');
+    toast.success('WhatsApp opened in new tab');
+    setShowWhatsAppModal(false);
   };
 
   const handleDragEnd = async (result) => {
@@ -1174,21 +1166,12 @@ const Leads = ({ user }) => {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={sendingWhatsApp || !whatsappMessage.trim()}
+                  disabled={!whatsappMessage.trim()}
                   data-testid="submit-whatsapp-button"
                   className="flex-1 bg-emerald-600 text-white font-bold hover:bg-emerald-700 flex items-center justify-center gap-2"
                 >
-                  {sendingWhatsApp ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      <WhatsappLogo size={18} weight="bold" />
-                      Send Message
-                    </>
-                  )}
+                  <WhatsappLogo size={18} weight="bold" />
+                  Open WhatsApp
                 </Button>
               </div>
             </form>

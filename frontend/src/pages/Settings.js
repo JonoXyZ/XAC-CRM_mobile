@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import AIWritingAssistant from '../components/AIWritingAssistant';
@@ -20,8 +20,6 @@ import {
   UserPlus,
   Trash,
   PencilSimple,
-  QrCode,
-  Power,
   ArrowsClockwise,
   CurrencyCircleDollar
 } from '@phosphor-icons/react';
@@ -214,34 +212,6 @@ const EarningsScaleEditor = ({ selectedUser: su, setSelectedUser: setSU }) => {
 
 
 
-const WhatsAppStatusBadge = ({ userId }) => {
-  const [status, setStatus] = useState(null);
-  useEffect(() => {
-    const check = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const res = await axios.get(`${API_URL}/api/whatsapp/status/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setStatus(res.data.connected);
-      } catch (error) {
-        console.error('WA status check failed:', error);
-        setStatus(false);
-      }
-    };
-    check();
-  }, [userId]);
-  return (
-    <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-zinc-900 border border-zinc-800" data-testid={`wa-badge-${userId}`}>
-      <WhatsappLogo size={14} weight="duotone" className={status ? 'text-emerald-500' : 'text-zinc-600'} />
-      <span className={`text-xs font-medium ${status ? 'text-emerald-400' : 'text-zinc-500'}`}>
-        {status === null ? '...' : status ? 'WA' : 'No WA'}
-      </span>
-    </div>
-  );
-};
-
-
 const Settings = ({ user }) => {
   const [settings, setSettings] = useState(null);
   const [users, setUsers] = useState([]);
@@ -253,8 +223,6 @@ const Settings = ({ user }) => {
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [whatsappConnected, setWhatsappConnected] = useState(false);
-  const [checkingWhatsApp, setCheckingWhatsApp] = useState(false);
   const [newTemplate, setNewTemplate] = useState({
     name: '',
     content: ''
@@ -268,13 +236,6 @@ const Settings = ({ user }) => {
     active: true,
     linked_consultants: []
   });
-  // WhatsApp session management state
-  const [waSessionStatus, setWaSessionStatus] = useState({});
-  const [waQrCode, setWaQrCode] = useState(null);
-  const [waLoading, setWaLoading] = useState(false);
-  const [waPolling, setWaPolling] = useState(false);
-  const qrPollRef = useRef(null);
-  const connectionCheckRef = useRef(null);
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -282,7 +243,6 @@ const Settings = ({ user }) => {
       fetchUsers();
     }
     fetchMessageTemplates();
-    checkWhatsAppStatus();
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchSettings = useCallback(async () => {
@@ -320,161 +280,6 @@ const Settings = ({ user }) => {
       console.error('Failed to fetch message templates:', error);
     }
   }, []);
-
-  const checkWhatsAppStatus = useCallback(async () => {
-    setCheckingWhatsApp(true);
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/api/whatsapp/status`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setWhatsappConnected(response.data.connected);
-    } catch (error) {
-      console.error('Failed to check WhatsApp status');
-    } finally {
-      setCheckingWhatsApp(false);
-    }
-  }, []);
-
-  // Cleanup polling on unmount or modal close
-  useEffect(() => {
-    return () => {
-      if (qrPollRef.current) clearTimeout(qrPollRef.current);
-      if (connectionCheckRef.current) clearInterval(connectionCheckRef.current);
-    };
-  }, []);
-
-  // When edit user modal opens for consultant/assistant, check their WA status
-  useEffect(() => {
-    if (showEditUserModal && selectedUser && (selectedUser.role === 'consultant' || selectedUser.role === 'assistant')) {
-      fetchUserWaStatus(selectedUser.id);
-    }
-    if (!showEditUserModal) {
-      // Cleanup when modal closes
-      setWaQrCode(null);
-      setWaLoading(false);
-      setWaPolling(false);
-      if (qrPollRef.current) clearTimeout(qrPollRef.current);
-      if (connectionCheckRef.current) clearInterval(connectionCheckRef.current);
-    }
-  }, [showEditUserModal, selectedUser]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const fetchUserWaStatus = async (userId) => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/api/whatsapp/status/${userId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setWaSessionStatus(response.data);
-    } catch (error) {
-      console.error('Failed to fetch WA session status:', error);
-      setWaSessionStatus({ connected: false, hasQR: false });
-    }
-  };
-
-  const handleStartWaSession = async (userId) => {
-    setWaLoading(true);
-    setWaQrCode(null);
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/whatsapp/start-session?user_id=${userId}`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      startQRPolling(userId);
-    } catch (error) {
-      console.error('Failed to start WA session:', error);
-      toast.error('Failed to start WhatsApp session');
-      setWaLoading(false);
-    }
-  };
-
-  const startQRPolling = (userId) => {
-    setWaPolling(true);
-    let attempts = 0;
-    const maxAttempts = 60;
-
-    const pollQR = async () => {
-      if (attempts >= maxAttempts) {
-        setWaPolling(false);
-        setWaLoading(false);
-        toast.error('QR code generation timed out');
-        return;
-      }
-      try {
-        const token = localStorage.getItem('token');
-        const response = await axios.get(`${API_URL}/api/whatsapp/qr/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (response.data.qrCode) {
-          setWaQrCode(response.data.qrCode);
-          setWaPolling(false);
-          setWaLoading(false);
-          startConnectionCheck(userId);
-          return;
-        }
-      } catch (error) { /* QR not ready yet - expected during polling */ }
-      attempts++;
-      qrPollRef.current = setTimeout(pollQR, 1500);
-    };
-    pollQR();
-  };
-
-  const startConnectionCheck = (userId) => {
-    connectionCheckRef.current = setInterval(async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const response = await axios.get(`${API_URL}/api/whatsapp/status/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (response.data.connected) {
-          clearInterval(connectionCheckRef.current);
-          setWaQrCode(null);
-          setWaSessionStatus(response.data);
-          toast.success(`WhatsApp connected for ${selectedUser?.name}!`);
-        }
-      } catch (error) { /* Connection check pending - expected during polling */ }
-    }, 2500);
-    // Stop after 2 minutes
-    setTimeout(() => {
-      if (connectionCheckRef.current) clearInterval(connectionCheckRef.current);
-    }, 120000);
-  };
-
-  const handleDisconnectWa = async (userId) => {
-    if (!window.confirm(`Disconnect WhatsApp for ${selectedUser?.name}?`)) return;
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/whatsapp/logout?user_id=${userId}`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      toast.success(`WhatsApp disconnected for ${selectedUser?.name}`);
-      setWaSessionStatus({ connected: false, hasQR: false });
-      setWaQrCode(null);
-    } catch (error) {
-      console.error('Failed to disconnect WA:', error);
-      toast.error('Failed to disconnect WhatsApp');
-    }
-  };
-
-  const handleEndSession = async (userId) => {
-    if (!window.confirm(`End session and clear all auth data for ${selectedUser?.name}? This will require re-scanning the QR code.`)) return;
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/whatsapp/end-session?user_id=${userId}`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      toast.success(`Session ended for ${selectedUser?.name}. Click Activate to start fresh.`);
-      setWaSessionStatus({ connected: false, hasQR: false });
-      setWaQrCode(null);
-      setWaPolling(false);
-      setWaLoading(false);
-      if (qrPollRef.current) clearInterval(qrPollRef.current);
-      if (connectionCheckRef.current) clearInterval(connectionCheckRef.current);
-    } catch (error) {
-      console.error('Failed to end WA session:', error);
-      toast.error('Failed to end session');
-    }
-  };
 
   const handleUpdateSettings = async (updates) => {
     try {
@@ -675,25 +480,24 @@ const Settings = ({ user }) => {
               <div className="flex items-start gap-4">
                 <WhatsappLogo size={48} weight="duotone" className="text-lime-400" />
                 <div className="flex-1">
-                  <h3 className="text-xl font-semibold text-zinc-100">WhatsApp Web Automation</h3>
+                  <h3 className="text-xl font-semibold text-zinc-100">WhatsApp Integration</h3>
                   <p className="text-sm text-zinc-400 mt-1">
-                    Individual consultant WhatsApp sessions via Baileys multi-session service
+                    Send messages to leads via WhatsApp Web links
                   </p>
                 </div>
               </div>
 
               <div className="mt-6 p-4 bg-zinc-950 rounded-md border border-zinc-800">
-                <h4 className="text-sm font-bold text-zinc-300 mb-3">How to Activate:</h4>
+                <h4 className="text-sm font-bold text-zinc-300 mb-3">How It Works:</h4>
                 <ol className="space-y-2 text-sm text-zinc-400">
-                  <li>1. Go to the <strong className="text-zinc-200">User Management</strong> tab</li>
-                  <li>2. Click the edit button on a consultant/assistant's profile</li>
-                  <li>3. Scroll down to the <strong className="text-zinc-200">WhatsApp Integration</strong> section</li>
-                  <li>4. Click <strong className="text-lime-400">Activate WhatsApp</strong> and scan the QR code with their phone</li>
-                  <li>5. Once connected, messages will be sent via that consultant's session</li>
+                  <li>1. Click <strong className="text-lime-400">WhatsApp</strong> on any lead or appointment</li>
+                  <li>2. Select a message template or type a custom message</li>
+                  <li>3. Click <strong className="text-lime-400">Open WhatsApp</strong> — it opens wa.me with the message pre-filled</li>
+                  <li>4. Send from your own WhatsApp (personal or business)</li>
                 </ol>
                 <div className="mt-4 p-3 bg-lime-400/10 border border-lime-400/20 rounded">
-                  <p className="text-xs text-lime-400 font-semibold">Multi-Session Architecture:</p>
-                  <p className="text-xs text-zinc-400 mt-1">Each consultant has their own WhatsApp session. Messages sent to leads are delivered from the assigned consultant's number, keeping communication personal and trackable.</p>
+                  <p className="text-xs text-lime-400 font-semibold">Templates:</p>
+                  <p className="text-xs text-zinc-400 mt-1">Create your own message templates in the "Message Templates" tab. Use variables like {'{client_name}'} and {'{consultant_name}'} for personalization.</p>
                 </div>
               </div>
             </Card>
@@ -840,9 +644,6 @@ const Settings = ({ user }) => {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {(u.role === 'consultant' || u.role === 'assistant') && (
-                        <WhatsAppStatusBadge userId={u.id} />
-                      )}
                       <Button
                         onClick={() => {
                           setSelectedUser(u);
@@ -869,27 +670,14 @@ const Settings = ({ user }) => {
 
           <TabsContent value="messages" className="space-y-6">
             <Card className="stat-card p-6 mb-6" data-testid="whatsapp-status-card">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <WhatsappLogo size={32} weight="duotone" className={whatsappConnected ? 'text-emerald-500' : 'text-zinc-600'} />
-                  <div>
-                    <h3 className="text-lg font-semibold text-zinc-100">WhatsApp Integration</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className={`w-2 h-2 rounded-full ${whatsappConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-                      <span className="text-sm text-zinc-400">
-                        {checkingWhatsApp ? 'Checking...' : whatsappConnected ? 'Connected & Active' : 'Not Connected'}
-                      </span>
-                    </div>
-                  </div>
+              <div className="flex items-center gap-4">
+                <WhatsappLogo size={32} weight="duotone" className="text-emerald-500" />
+                <div>
+                  <h3 className="text-lg font-semibold text-zinc-100">WhatsApp Templates</h3>
+                  <p className="text-sm text-zinc-400 mt-1">
+                    Create templates below. Use {'{client_name}'} and {'{consultant_name}'} as variables. When you click "WhatsApp" on a lead, the template will be auto-filled and opened via wa.me link.
+                  </p>
                 </div>
-                <Button
-                  onClick={checkWhatsAppStatus}
-                  disabled={checkingWhatsApp}
-                  data-testid="refresh-whatsapp-status"
-                  className="bg-zinc-800 text-zinc-50 hover:bg-zinc-700"
-                >
-                  {checkingWhatsApp ? 'Checking...' : 'Refresh Status'}
-                </Button>
               </div>
             </Card>
 
@@ -1415,98 +1203,6 @@ const Settings = ({ user }) => {
                   </Button>
                 </div>
               </form>
-
-              {/* WhatsApp Integration Section - only for consultants/assistants */}
-              {(selectedUser.role === 'consultant' || selectedUser.role === 'assistant') && (
-                <div className="border-t border-zinc-800 pt-5" data-testid="wa-integration-section">
-                  <div className="flex items-center gap-3 mb-4">
-                    <WhatsappLogo size={28} weight="duotone" className="text-lime-400" />
-                    <div>
-                      <h4 className="text-base font-bold text-zinc-100">WhatsApp Integration</h4>
-                      <p className="text-xs text-zinc-500">Link {selectedUser.name}'s WhatsApp for CRM messaging</p>
-                    </div>
-                  </div>
-
-                  {/* Status display */}
-                  <div className="flex items-center gap-3 mb-4 p-3 bg-zinc-950 rounded-md border border-zinc-800">
-                    <div className={`w-3 h-3 rounded-full ${waSessionStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`}></div>
-                    <span className="text-sm text-zinc-300">
-                      {waSessionStatus.connected ? 'Connected & Active' : 'Not Connected'}
-                    </span>
-                    <Button
-                      onClick={() => fetchUserWaStatus(selectedUser.id)}
-                      data-testid="wa-refresh-status"
-                      className="ml-auto p-1.5 bg-zinc-800 hover:bg-zinc-700"
-                      title="Refresh status"
-                    >
-                      <ArrowsClockwise size={16} />
-                    </Button>
-                  </div>
-
-                  {/* If connected - show disconnect */}
-                  {waSessionStatus.connected ? (
-                    <Button
-                      onClick={() => handleDisconnectWa(selectedUser.id)}
-                      data-testid="wa-disconnect-button"
-                      className="w-full bg-red-900/50 border border-red-800 text-red-200 hover:bg-red-900 flex items-center justify-center gap-2"
-                    >
-                      <Power size={18} />
-                      Disconnect WhatsApp
-                    </Button>
-                  ) : (
-                    <>
-                      {/* QR code display or setup button */}
-                      {waQrCode ? (
-                        <div className="space-y-3">
-                          <div className="p-3 bg-lime-400/10 border border-lime-400/20 rounded-lg">
-                            <ol className="text-xs text-zinc-300 space-y-1">
-                              <li><span className="font-bold text-lime-400">1.</span> Open WhatsApp on <strong>{selectedUser.name}'s phone</strong></li>
-                              <li><span className="font-bold text-lime-400">2.</span> Go to <strong>Settings &rarr; Linked Devices</strong></li>
-                              <li><span className="font-bold text-lime-400">3.</span> Tap <strong>Link a Device</strong></li>
-                              <li><span className="font-bold text-lime-400">4.</span> Scan the QR code below</li>
-                            </ol>
-                          </div>
-                          <div className="flex justify-center">
-                            <div className="bg-white p-3 rounded-lg">
-                              <img src={waQrCode} alt="WhatsApp QR Code" className="w-52 h-52" data-testid="wa-qr-image" />
-                            </div>
-                          </div>
-                          <p className="text-xs text-zinc-500 text-center">Waiting for scan... This may take a few seconds.</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <Button
-                            onClick={() => handleStartWaSession(selectedUser.id)}
-                            disabled={waLoading || waPolling}
-                            data-testid="wa-activate-button"
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2"
-                          >
-                            {waLoading || waPolling ? (
-                              <>
-                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                                Generating QR Code...
-                              </>
-                            ) : (
-                              <>
-                                <QrCode size={20} weight="bold" />
-                                Activate WhatsApp
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            onClick={() => handleEndSession(selectedUser.id)}
-                            data-testid="wa-end-session-button"
-                            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold flex items-center justify-center gap-2"
-                          >
-                            <Trash size={20} weight="bold" />
-                            End Session
-                          </Button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
 
               {/* Earnings Scale Section - Admin only, consultants only */}
               {user?.role === 'admin' && selectedUser.role === 'consultant' && (

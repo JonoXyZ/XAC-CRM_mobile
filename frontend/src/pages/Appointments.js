@@ -31,7 +31,6 @@ const Appointments = ({ user }) => {
   const [showNewModal, setShowNewModal] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState({});
   const [newAppointment, setNewAppointment] = useState({
     name: '',
     surname: '',
@@ -117,25 +116,21 @@ const Appointments = ({ user }) => {
     setShowNewModal(true);
   };
 
-  const sendWhatsAppAction = async (appointment, messageText, actionKey) => {
+  const sendWhatsAppAction = (appointment, messageText, actionKey) => {
     if (!appointment.lead_phone) {
       toast.error('No phone number for this lead');
       return;
     }
-    setActionLoading(prev => ({ ...prev, [actionKey]: true }));
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/api/whatsapp/send`, {
-        phone_number: appointment.lead_phone,
-        message: messageText,
-        lead_id: appointment.lead_id
-      }, { headers: { Authorization: `Bearer ${token}` } });
-      toast.success('Message sent via WhatsApp');
-    } catch (error) {
-      toast.error('Failed to send WhatsApp message');
-    } finally {
-      setActionLoading(prev => ({ ...prev, [actionKey]: false }));
-    }
+    
+    // Clean phone number
+    let phone = appointment.lead_phone.replace(/[\s\-()]/g, '');
+    if (phone.startsWith('0')) phone = '27' + phone.substring(1);
+    if (!phone.startsWith('+') && !phone.startsWith('27')) phone = '27' + phone;
+    phone = phone.replace('+', '');
+    
+    const encodedMessage = encodeURIComponent(messageText);
+    window.open(`https://wa.me/${phone}?text=${encodedMessage}`, '_blank');
+    toast.success('WhatsApp opened in new tab');
   };
 
   const handleSendPin = (apt) => {
@@ -278,30 +273,27 @@ const Appointments = ({ user }) => {
                             </Button>
                             <Button
                               onClick={(e) => { e.stopPropagation(); handleSendPin(appointment); }}
-                              disabled={actionLoading[`pin-${appointment.id}`]}
                               data-testid={`send-pin-${appointment.id}`}
                               className="bg-orange-600 text-white hover:bg-orange-700 text-xs px-3 py-1 h-8 flex items-center gap-1.5"
                             >
                               <MapPin size={14} weight="bold" />
-                              {actionLoading[`pin-${appointment.id}`] ? 'Sending...' : 'Send Pin'}
+                              Send Pin
                             </Button>
                             <Button
                               onClick={(e) => { e.stopPropagation(); handleSetReminder(appointment); }}
-                              disabled={actionLoading[`reminder-${appointment.id}`]}
                               data-testid={`send-reminder-${appointment.id}`}
                               className="bg-amber-600 text-white hover:bg-amber-700 text-xs px-3 py-1 h-8 flex items-center gap-1.5"
                             >
                               <Bell size={14} weight="bold" />
-                              {actionLoading[`reminder-${appointment.id}`] ? 'Sending...' : 'Send Reminder'}
+                              Send Reminder
                             </Button>
                             <Button
                               onClick={(e) => { e.stopPropagation(); handleSendFollowUp(appointment); }}
-                              disabled={actionLoading[`followup-${appointment.id}`]}
                               data-testid={`send-followup-${appointment.id}`}
                               className="bg-violet-600 text-white hover:bg-violet-700 text-xs px-3 py-1 h-8 flex items-center gap-1.5"
                             >
                               <ChatDots size={14} weight="bold" />
-                              {actionLoading[`followup-${appointment.id}`] ? 'Sending...' : 'Follow Up'}
+                              Follow Up
                             </Button>
                           </div>
                         </div>
