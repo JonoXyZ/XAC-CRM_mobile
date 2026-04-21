@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 import jwt
 from bson import ObjectId
+from bson.errors import InvalidId
 import httpx
 
 ROOT_DIR = Path(__file__).parent
@@ -26,6 +27,13 @@ WHATSAPP_SERVICE_URL = os.environ.get('WHATSAPP_SERVICE_URL', 'http://localhost:
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+def validate_object_id(id_str: str, name: str = "ID") -> ObjectId:
+    """Validate and convert a string to ObjectId, raising 400 if invalid."""
+    try:
+        return ObjectId(id_str)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=400, detail=f"Invalid {name}: {id_str}")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -49,7 +57,7 @@ async def create_notification(user_id: str, notif_type: str, title: str, message
     if send_whatsapp:
         try:
             # Find user's phone to send WhatsApp notification
-            user = await db.users.find_one({"_id": ObjectId(user_id)})
+            user = await db.users.find_one({"_id": validate_object_id(user_id, "user")})
             if user and user.get("phone"):
                 phone = user["phone"]
                 wa_message = f"*{title}*\n{message}"
@@ -235,7 +243,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
     
-    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    user = await db.users.find_one({"_id": validate_object_id(user_id, "user")})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     
@@ -355,7 +363,7 @@ async def get_unread_count(current_user: dict = Depends(get_current_user)):
 @api_router.put("/notifications/{notif_id}/read")
 async def mark_notification_read(notif_id: str, current_user: dict = Depends(get_current_user)):
     await db.notifications.update_one(
-        {"_id": ObjectId(notif_id), "user_id": str(current_user["_id"])},
+        {"_id": validate_object_id(notif_id, "notification"), "user_id": str(current_user["_id"])},
         {"$set": {"read": True}}
     )
     return {"success": True}
@@ -401,7 +409,7 @@ async def update_user(user_id: str, updates: Dict[str, Any], current_user: dict 
         updates["plain_password"] = updates["password"]
         updates["password"] = pwd_context.hash(updates["password"])
     
-    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": updates})
+    await db.users.update_one({"_id": validate_object_id(user_id, "user")}, {"$set": updates})
     return {"success": True}
 
 @api_router.delete("/users/{user_id}")
@@ -409,7 +417,7 @@ async def delete_user(user_id: str, current_user: dict = Depends(get_current_use
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Only admins can delete users")
     
-    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"active": False}})
+    await db.users.update_one({"_id": validate_object_id(user_id, "user")}, {"$set": {"active": False}})
     return {"success": True}
 
 @api_router.post("/leads", response_model=LeadResponse)
@@ -537,7 +545,7 @@ async def get_leads(
 
 @api_router.get("/leads/{lead_id}", response_model=LeadResponse)
 async def get_lead(lead_id: str, current_user: dict = Depends(get_current_user)):
-    lead = await db.leads.find_one({"_id": ObjectId(lead_id)})
+    lead = await db.leads.find_one({"_id": validate_object_id(lead_id, "lead")})
     
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -569,7 +577,7 @@ async def get_lead(lead_id: str, current_user: dict = Depends(get_current_user))
 
 @api_router.put("/leads/{lead_id}")
 async def update_lead(lead_id: str, lead_update: LeadUpdate, current_user: dict = Depends(get_current_user)):
-    lead = await db.leads.find_one({"_id": ObjectId(lead_id)})
+    lead = await db.leads.find_one({"_id": validate_object_id(lead_id, "lead")})
     
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -621,7 +629,7 @@ async def update_lead(lead_id: str, lead_update: LeadUpdate, current_user: dict 
                     "details": {"deals_deleted": deleted.deleted_count, "reason": f"Lead moved from Closed Won to {new_stage}"}
                 })
     
-    await db.leads.update_one({"_id": ObjectId(lead_id)}, {"$set": update_data})
+    await db.leads.update_one({"_id": validate_object_id(lead_id, "lead")}, {"$set": update_data})
     
     return {"success": True}
 
@@ -631,7 +639,7 @@ async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_use
     if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER, UserRole.CONSULTANT]:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    lead = await db.leads.find_one({"_id": ObjectId(lead_id)})
+    lead = await db.leads.find_one({"_id": validate_object_id(lead_id, "lead")})
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     
@@ -639,7 +647,7 @@ async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_use
     await db.deals.delete_many({"lead_id": lead_id})
     await db.activities.delete_many({"lead_id": lead_id})
     await db.appointments.delete_many({"lead_id": lead_id})
-    await db.leads.delete_one({"_id": ObjectId(lead_id)})
+    await db.leads.delete_one({"_id": validate_object_id(lead_id, "lead")})
     
     await db.audit_logs.insert_one({
         "action": "lead_deleted",
@@ -657,7 +665,7 @@ async def reassign_lead(lead_id: str, new_owner_id: str, current_user: dict = De
         raise HTTPException(status_code=403, detail="Only managers can reassign leads")
     
     await db.leads.update_one(
-        {"_id": ObjectId(lead_id)},
+        {"_id": validate_object_id(lead_id, "lead")},
         {"$set": {"owner_id": new_owner_id, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
     
@@ -1017,7 +1025,7 @@ def calculate_cash_commission(total_value, tiers):
 async def _resolve_commission_target(user_id, current_user):
     """Resolve which user the commission report is for."""
     if user_id and current_user["role"] == UserRole.ADMIN:
-        target_user = await db.users.find_one({"_id": ObjectId(user_id)})
+        target_user = await db.users.find_one({"_id": validate_object_id(user_id, "user")})
         if not target_user:
             raise HTTPException(status_code=404, detail="User not found")
         return target_user
@@ -1338,7 +1346,7 @@ async def update_appointment(
     current_user: dict = Depends(get_current_user)
 ):
     await db.appointments.update_one(
-        {"_id": ObjectId(appointment_id)},
+        {"_id": validate_object_id(appointment_id, "appointment")},
         {"$set": updates}
     )
     return {"success": True}
@@ -1857,7 +1865,7 @@ async def update_message_template(
     update_data = {k: v for k, v in template_update.model_dump().items() if v is not None}
     
     await db.message_templates.update_one(
-        {"_id": ObjectId(template_id)},
+        {"_id": validate_object_id(template_id, "template")},
         {"$set": update_data}
     )
     
@@ -1865,13 +1873,13 @@ async def update_message_template(
 
 @api_router.delete("/message-templates/{template_id}")
 async def delete_message_template(template_id: str, current_user: dict = Depends(get_current_user)):
-    await db.message_templates.delete_one({"_id": ObjectId(template_id)})
+    await db.message_templates.delete_one({"_id": validate_object_id(template_id, "template")})
     return {"success": True}
 
 @api_router.put("/leads/{lead_id}/score")
 async def update_lead_score(lead_id: str, score: int, current_user: dict = Depends(get_current_user)):
     await db.leads.update_one(
-        {"_id": ObjectId(lead_id)},
+        {"_id": validate_object_id(lead_id, "lead")},
         {"$set": {"score": score, "scored_at": datetime.now(timezone.utc).isoformat()}}
     )
     return {"success": True}
@@ -2141,7 +2149,7 @@ async def get_month_report_details(report_id: str, current_user: dict = Depends(
     if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    report = await db.month_reports.find_one({"_id": ObjectId(report_id)})
+    report = await db.month_reports.find_one({"_id": validate_object_id(report_id, "report")})
     
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -2163,21 +2171,21 @@ async def get_month_report_details(report_id: str, current_user: dict = Depends(
 async def update_month_report(report_id: str, data: Dict[str, Any], current_user: dict = Depends(get_current_user)):
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin only")
-    report = await db.month_reports.find_one({"_id": ObjectId(report_id)})
+    report = await db.month_reports.find_one({"_id": validate_object_id(report_id, "report")})
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     updates = {}
     if "name" in data:
         updates["name"] = data["name"]
     if updates:
-        await db.month_reports.update_one({"_id": ObjectId(report_id)}, {"$set": updates})
+        await db.month_reports.update_one({"_id": validate_object_id(report_id, "report")}, {"$set": updates})
     return {"success": True}
 
 @api_router.delete("/reports/month-reports/{report_id}")
 async def delete_month_report(report_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin only")
-    result = await db.month_reports.delete_one({"_id": ObjectId(report_id)})
+    result = await db.month_reports.delete_one({"_id": validate_object_id(report_id, "report")})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Report not found")
     return {"success": True}
@@ -2186,7 +2194,7 @@ async def delete_month_report(report_id: str, current_user: dict = Depends(get_c
 async def download_month_report_pdf(report_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
         raise HTTPException(status_code=403, detail="Access denied")
-    report = await db.month_reports.find_one({"_id": ObjectId(report_id)})
+    report = await db.month_reports.find_one({"_id": validate_object_id(report_id, "report")})
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     
@@ -2295,7 +2303,7 @@ async def get_forms(current_user: dict = Depends(get_current_user)):
 async def get_form(form_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in MARKETING_ROLES:
         raise HTTPException(status_code=403, detail="Access denied")
-    form = await db.forms.find_one({"_id": ObjectId(form_id)})
+    form = await db.forms.find_one({"_id": validate_object_id(form_id, "form")})
     if not form:
         raise HTTPException(status_code=404, detail="Form not found")
     fid = str(form["_id"])
@@ -2314,14 +2322,14 @@ async def update_form(form_id: str, updates: Dict[str, Any], current_user: dict 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     updates.pop("_id", None)
     updates.pop("id", None)
-    await db.forms.update_one({"_id": ObjectId(form_id)}, {"$set": updates})
+    await db.forms.update_one({"_id": validate_object_id(form_id, "form")}, {"$set": updates})
     return {"success": True}
 
 @api_router.delete("/forms/{form_id}")
 async def delete_form(form_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in [UserRole.ADMIN, UserRole.MARKETING_AGENT]:
         raise HTTPException(status_code=403, detail="Access denied")
-    await db.forms.delete_one({"_id": ObjectId(form_id)})
+    await db.forms.delete_one({"_id": validate_object_id(form_id, "form")})
     return {"success": True}
 
 # ==========================================
@@ -2767,7 +2775,7 @@ async def meta_webhook_receive(payload: Dict[str, Any]):
 # Webhook endpoint for receiving leads from forms
 @api_router.post("/webhooks/form/{form_id}")
 async def form_webhook(form_id: str, payload: Dict[str, Any]):
-    form = await db.forms.find_one({"_id": ObjectId(form_id)})
+    form = await db.forms.find_one({"_id": validate_object_id(form_id, "form")})
     if not form or not form.get("active"):
         raise HTTPException(status_code=404, detail="Form not found or inactive")
     
@@ -3021,12 +3029,12 @@ async def delete_media(media_id: str, current_user: dict = Depends(get_current_u
     allowed_roles = [UserRole.ADMIN, UserRole.MARKETING_AGENT, UserRole.SALES_MANAGER, UserRole.CLUB_MANAGER]
     if current_user["role"] not in allowed_roles:
         raise HTTPException(status_code=403, detail="Access denied")
-    media = await db.media.find_one({"_id": ObjectId(media_id)})
+    media = await db.media.find_one({"_id": validate_object_id(media_id, "media")})
     if media:
         filepath = os.path.join(MEDIA_DIR, media["filename"])
         if os.path.exists(filepath):
             os.remove(filepath)
-        await db.media.delete_one({"_id": ObjectId(media_id)})
+        await db.media.delete_one({"_id": validate_object_id(media_id, "media")})
     return {"success": True}
 
 from fastapi.responses import FileResponse as FastAPIFileResponse
@@ -3438,7 +3446,7 @@ async def update_bug_report(report_id: str, updates: Dict[str, Any], current_use
     allowed = {"status"}
     filtered = {k: v for k, v in updates.items() if k in allowed}
     if filtered:
-        await db.bug_reports.update_one({"_id": ObjectId(report_id)}, {"$set": filtered})
+        await db.bug_reports.update_one({"_id": validate_object_id(report_id, "report")}, {"$set": filtered})
     return {"success": True}
 
 # ==========================================
@@ -3534,14 +3542,14 @@ async def update_workflow(workflow_id: str, updates: Dict[str, Any], current_use
         raise HTTPException(status_code=403, detail="Access denied")
     updates.pop("_id", None)
     updates.pop("id", None)
-    await db.workflows.update_one({"_id": ObjectId(workflow_id)}, {"$set": updates})
+    await db.workflows.update_one({"_id": validate_object_id(workflow_id, "workflow")}, {"$set": updates})
     return {"success": True}
 
 @api_router.delete("/workflows/{workflow_id}")
 async def delete_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
         raise HTTPException(status_code=403, detail="Access denied")
-    await db.workflows.delete_one({"_id": ObjectId(workflow_id)})
+    await db.workflows.delete_one({"_id": validate_object_id(workflow_id, "workflow")})
     return {"success": True}
 
 app.include_router(api_router)
