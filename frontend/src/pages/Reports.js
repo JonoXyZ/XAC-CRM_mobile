@@ -8,7 +8,7 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { toast } from 'sonner';
-import { DownloadSimple, FileText, Lightning, Warning } from '@phosphor-icons/react';
+import { DownloadSimple, FileText, Lightning, Warning, PencilSimple, Trash } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -22,6 +22,8 @@ const Reports = ({ user }) => {
   const [loadingMonthReports, setLoadingMonthReports] = useState(true);
   const [showReportModal, setShowReportModal] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [editingReportId, setEditingReportId] = useState(null);
+  const [editingName, setEditingName] = useState('');
 
   const fetchMonthReports = useCallback(async () => {
     try {
@@ -89,6 +91,55 @@ const Reports = ({ user }) => {
       toast.error(error.response?.data?.detail || 'Failed to generate report');
     } finally {
       setGeneratingReport(false);
+    }
+  };
+
+  const handleRenameReport = async (reportId) => {
+    if (!editingName.trim()) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`${API_URL}/api/reports/month-reports/${reportId}`, 
+        { name: editingName.trim() },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success('Report renamed');
+      setEditingReportId(null);
+      setEditingName('');
+      fetchMonthReports();
+    } catch (error) {
+      toast.error('Failed to rename report');
+    }
+  };
+
+  const handleDeleteReport = async (reportId) => {
+    if (!window.confirm('Delete this report permanently? This cannot be undone.')) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API_URL}/api/reports/month-reports/${reportId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Report deleted');
+      fetchMonthReports();
+    } catch (error) {
+      toast.error('Failed to delete report');
+    }
+  };
+
+  const handleDownloadPDF = async (report) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/api/reports/month-reports/${report.id}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'text'
+      });
+      
+      // Open in new window for print-to-PDF
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(response.data);
+      printWindow.document.close();
+      setTimeout(() => printWindow.print(), 500);
+    } catch (error) {
+      toast.error('Failed to download report');
     }
   };
 
@@ -226,12 +277,48 @@ const Reports = ({ user }) => {
                   className="p-4 bg-zinc-950 rounded-md border border-zinc-800 hover:border-zinc-700"
                   data-testid={`month-report-${report.id}`}
                 >
+                  {/* Report Name */}
+                  <div className="flex items-center gap-2 mb-2">
+                    {editingReportId === report.id ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <Input
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleRenameReport(report.id); if (e.key === 'Escape') setEditingReportId(null); }}
+                          className="bg-zinc-900 border-zinc-700 text-zinc-50 h-8 text-sm"
+                          autoFocus
+                          data-testid={`rename-input-${report.id}`}
+                        />
+                        <Button onClick={() => handleRenameReport(report.id)} className="bg-lime-400 text-zinc-950 hover:bg-lime-500 h-8 px-3 text-xs font-bold" data-testid={`save-name-${report.id}`}>
+                          Save
+                        </Button>
+                        <Button onClick={() => setEditingReportId(null)} className="bg-zinc-800 text-zinc-400 hover:bg-zinc-700 h-8 px-3 text-xs">
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <h4 className="text-lg font-bold text-zinc-100 flex-1" data-testid={`report-name-${report.id}`}>
+                          {report.name || `Report ${report.period_start} to ${report.period_end}`}
+                        </h4>
+                        <Button
+                          onClick={() => { setEditingReportId(report.id); setEditingName(report.name || `Report ${report.period_start} to ${report.period_end}`); }}
+                          className="p-1.5 h-auto bg-zinc-800 hover:bg-zinc-700"
+                          title="Rename Report"
+                          data-testid={`edit-name-${report.id}`}
+                        >
+                          <PencilSimple size={14} />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
                   <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-semibold text-zinc-100">
+                    <div className="flex-1">
+                      <p className="text-sm text-zinc-400">
                         {new Date(report.period_start).toLocaleDateString()} - {new Date(report.period_end).toLocaleDateString()}
                       </p>
-                      <div className="grid grid-cols-3 gap-4 mt-2 text-sm">
+                      <div className="grid grid-cols-4 gap-4 mt-2 text-sm">
                         <div>
                           <span className="text-zinc-500">Deals:</span>
                           <span className="ml-2 font-semibold text-zinc-100">{report.total_deals}</span>
@@ -244,10 +331,38 @@ const Reports = ({ user }) => {
                           <span className="text-zinc-500">Debit:</span>
                           <span className="ml-2 font-semibold text-cyan-400">R{report.total_debit_sales}</span>
                         </div>
+                        <div>
+                          <span className="text-zinc-500">Units:</span>
+                          <span className="ml-2 font-semibold text-amber-400">{report.total_units}</span>
+                        </div>
                       </div>
-                      <p className="text-xs text-zinc-500 mt-2">
+                      <p className="text-xs text-zinc-600 mt-2">
                         Generated: {new Date(report.generated_at).toLocaleString()}
                       </p>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 ml-4">
+                      <Button
+                        onClick={() => handleDownloadPDF(report)}
+                        className="bg-lime-400 text-zinc-950 hover:bg-lime-500 h-8 px-3 text-xs font-bold flex items-center gap-1"
+                        title="Download PDF"
+                        data-testid={`download-pdf-${report.id}`}
+                      >
+                        <DownloadSimple size={14} weight="bold" />
+                        PDF
+                      </Button>
+                      {user?.role === 'admin' && (
+                        <Button
+                          onClick={() => handleDeleteReport(report.id)}
+                          className="bg-red-900/50 hover:bg-red-900 text-red-200 h-8 px-3 text-xs flex items-center gap-1"
+                          title="Delete Report"
+                          data-testid={`delete-report-${report.id}`}
+                        >
+                          <Trash size={14} />
+                          Delete
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>

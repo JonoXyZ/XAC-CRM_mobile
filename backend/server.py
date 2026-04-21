@@ -2077,6 +2077,7 @@ async def generate_month_report(report_req: GenerateReportRequest, current_user:
             })
     
     report_doc = {
+        "name": f"Report {month_start} to {month_end}",
         "period_start": month_start,
         "period_end": month_end,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -2123,6 +2124,7 @@ async def get_month_reports(current_user: dict = Depends(get_current_user)):
     return [
         {
             "id": str(report["_id"]),
+            "name": report.get("name", f"Report {report['period_start']} to {report['period_end']}"),
             "period_start": report["period_start"],
             "period_end": report["period_end"],
             "generated_at": report["generated_at"],
@@ -2146,6 +2148,7 @@ async def get_month_report_details(report_id: str, current_user: dict = Depends(
     
     return {
         "id": str(report["_id"]),
+        "name": report.get("name", ""),
         "period_start": report["period_start"],
         "period_end": report["period_end"],
         "generated_at": report["generated_at"],
@@ -2155,6 +2158,83 @@ async def get_month_report_details(report_id: str, current_user: dict = Depends(
         "total_debit_sales": report["total_debit_sales"],
         "total_units": report["total_units"]
     }
+
+@api_router.put("/reports/month-reports/{report_id}")
+async def update_month_report(report_id: str, data: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    report = await db.month_reports.find_one({"_id": ObjectId(report_id)})
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    updates = {}
+    if "name" in data:
+        updates["name"] = data["name"]
+    if updates:
+        await db.month_reports.update_one({"_id": ObjectId(report_id)}, {"$set": updates})
+    return {"success": True}
+
+@api_router.delete("/reports/month-reports/{report_id}")
+async def delete_month_report(report_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    result = await db.month_reports.delete_one({"_id": ObjectId(report_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return {"success": True}
+
+@api_router.get("/reports/month-reports/{report_id}/pdf")
+async def download_month_report_pdf(report_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.SALES_MANAGER]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    report = await db.month_reports.find_one({"_id": ObjectId(report_id)})
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    report_name = report.get("name", "Report")
+    period = f"{report['period_start']} to {report['period_end']}"
+    
+    # Build HTML for PDF
+    deals_rows = ""
+    for d in report.get("deals", []):
+        deals_rows += f"""<tr>
+            <td style="padding:8px;border-bottom:1px solid #333;">{d.get('lead_name','')}</td>
+            <td style="padding:8px;border-bottom:1px solid #333;">{d.get('payment_type','')}</td>
+            <td style="padding:8px;border-bottom:1px solid #333;">R{d.get('sales_value','') or d.get('debit_order_value','') or 0}</td>
+            <td style="padding:8px;border-bottom:1px solid #333;">{d.get('units','') or '-'}</td>
+            <td style="padding:8px;border-bottom:1px solid #333;">{d.get('closed_by_name','')}</td>
+        </tr>"""
+    
+    html = f"""<html><head><style>
+        body {{ font-family: Arial, sans-serif; color: #fff; background: #0a0a0a; padding: 40px; }}
+        h1 {{ color: #bef264; margin-bottom: 4px; }}
+        h2 {{ color: #a1a1aa; font-size: 14px; font-weight: normal; }}
+        .stats {{ display: flex; gap: 24px; margin: 24px 0; }}
+        .stat {{ background: #18181b; padding: 16px 24px; border-radius: 8px; border: 1px solid #27272a; }}
+        .stat-label {{ font-size: 11px; color: #71717a; text-transform: uppercase; letter-spacing: 1px; }}
+        .stat-value {{ font-size: 28px; font-weight: 900; margin-top: 4px; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 24px; }}
+        th {{ text-align: left; padding: 10px 8px; border-bottom: 2px solid #bef264; color: #bef264; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }}
+        td {{ color: #d4d4d8; font-size: 13px; }}
+        .footer {{ margin-top: 32px; font-size: 11px; color: #52525b; text-align: center; }}
+    </style></head><body>
+        <h1>{report_name}</h1>
+        <h2>{period} &nbsp;|&nbsp; Generated: {report.get('generated_at','')[:10]}</h2>
+        <div class="stats">
+            <div class="stat"><div class="stat-label">Total Deals</div><div class="stat-value" style="color:#bef264;">{report['total_deals']}</div></div>
+            <div class="stat"><div class="stat-label">Cash Sales</div><div class="stat-value" style="color:#34d399;">R{report['total_cash_sales']}</div></div>
+            <div class="stat"><div class="stat-label">Debit Sales</div><div class="stat-value" style="color:#22d3ee;">R{report['total_debit_sales']}</div></div>
+            <div class="stat"><div class="stat-label">Total Units</div><div class="stat-value" style="color:#fbbf24;">{report['total_units']}</div></div>
+        </div>
+        <table>
+            <thead><tr><th>Lead</th><th>Type</th><th>Value</th><th>Units</th><th>Closed By</th></tr></thead>
+            <tbody>{deals_rows if deals_rows else '<tr><td colspan="5" style="padding:16px;text-align:center;color:#52525b;">No deals in this report</td></tr>'}</tbody>
+        </table>
+        <div class="footer">XAC CRM — Revival Fitness | {period}</div>
+    </body></html>"""
+    
+    from fastapi.responses import Response
+    # Return HTML that the frontend will convert to PDF via browser print
+    return Response(content=html, media_type="text/html")
 
 # ==========================================
 # MARKETING: Forms, Gallery, Webhooks
