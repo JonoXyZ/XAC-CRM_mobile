@@ -2343,11 +2343,11 @@ async def get_meta_config(current_user: dict = Depends(get_current_user)):
     """Get Meta integration configuration."""
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin only")
-    config = await db.settings.find_one({}, {"meta_page_token": 1, "meta_page_id": 1, "meta_connected": 1, "_id": 0})
+    config = await db.settings.find_one({}, {"meta_page_token": 1, "meta_page_access_token": 1, "meta_page_id": 1, "meta_connected": 1, "_id": 0})
     if not config:
         config = {}
-    # Mask the token for display
-    token = config.get("meta_page_token", "")
+    # Show status based on whichever token exists
+    token = config.get("meta_page_access_token") or config.get("meta_page_token", "")
     masked = f"{token[:8]}...{token[-4:]}" if len(token) > 12 else ("*" * len(token) if token else "")
     return {
         "page_token_set": bool(token),
@@ -2379,7 +2379,7 @@ async def test_meta_connection(current_user: dict = Depends(get_current_user)):
     """Test Meta Graph API connection. Auto-detects page and converts User token to Page token."""
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin only")
-    config = await db.settings.find_one({}, {"meta_page_token": 1, "meta_page_id": 1, "_id": 0})
+    config = await db.settings.find_one({}, {"meta_page_token": 1, "meta_page_access_token": 1, "meta_page_id": 1, "_id": 0})
     token = (config or {}).get("meta_page_token", "")
     page_id = (config or {}).get("meta_page_id", "")
     if not token:
@@ -2453,14 +2453,15 @@ async def import_meta_leads(data: Dict[str, Any], current_user: dict = Depends(g
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin only")
     
-    config = await db.settings.find_one({}, {"meta_page_token": 1, "meta_page_id": 1, "_id": 0})
-    token = (config or {}).get("meta_page_token", "")
+    config = await db.settings.find_one({}, {"meta_page_token": 1, "meta_page_access_token": 1, "meta_page_id": 1, "_id": 0})
+    # Prefer page access token (set by Test Connection), fallback to user token
+    token = (config or {}).get("meta_page_access_token") or (config or {}).get("meta_page_token", "")
     page_id = (config or {}).get("meta_page_id", "")
     
     if not token:
-        raise HTTPException(status_code=400, detail="No Page Access Token configured. Go to Settings → Integrations to add it.")
+        raise HTTPException(status_code=400, detail="No Page Access Token configured. Go to Settings → Integrations, save your token, then click Test Connection.")
     if not page_id:
-        raise HTTPException(status_code=400, detail="No Page ID configured. Save your Page ID or run Test Connection first.")
+        raise HTTPException(status_code=400, detail="No Page ID configured. Click Test Connection first to detect your page.")
     
     from_date = data.get("from_date", "")
     to_date = data.get("to_date", "")
