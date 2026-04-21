@@ -656,8 +656,8 @@ const Leads = ({ user }) => {
             </div>
           </DragDropContext>
         ) : (
-          <div className="bg-zinc-900/40 border border-zinc-800 rounded-lg overflow-hidden" data-testid="table-view">
-            <table className="w-full text-left text-sm">
+          <div className="bg-zinc-900/40 border border-zinc-800 rounded-lg overflow-x-auto" data-testid="table-view">
+            <table className="w-full text-left text-sm min-w-[1100px]">
               <thead className="bg-zinc-900/80 text-zinc-400 font-semibold uppercase text-xs">
                 <tr>
                   {user?.role === 'admin' && (
