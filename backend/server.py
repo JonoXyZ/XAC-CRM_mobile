@@ -2250,6 +2250,81 @@ async def delete_form(form_id: str, current_user: dict = Depends(get_current_use
 
 META_VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN", "xac_crm_meta_verify")
 
+@api_router.get("/meta/config")
+async def get_meta_config(current_user: dict = Depends(get_current_user)):
+    """Get Meta integration configuration."""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    config = await db.settings.find_one({}, {"meta_page_token": 1, "meta_page_id": 1, "meta_connected": 1, "_id": 0})
+    if not config:
+        config = {}
+    # Mask the token for display
+    token = config.get("meta_page_token", "")
+    masked = f"{token[:8]}...{token[-4:]}" if len(token) > 12 else ("*" * len(token) if token else "")
+    return {
+        "page_token_set": bool(token),
+        "page_token_masked": masked,
+        "page_id": config.get("meta_page_id", ""),
+        "connected": config.get("meta_connected", False),
+        "webhook_url": f"/api/webhooks/meta",
+        "verify_token": META_VERIFY_TOKEN
+    }
+
+@api_router.put("/meta/config")
+async def update_meta_config(data: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    """Save Meta integration configuration."""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    updates = {}
+    if "page_token" in data:
+        updates["meta_page_token"] = data["page_token"]
+    if "page_id" in data:
+        updates["meta_page_id"] = data["page_id"]
+    if "connected" in data:
+        updates["meta_connected"] = data["connected"]
+    if updates:
+        await db.settings.update_one({}, {"$set": updates}, upsert=True)
+    return {"success": True}
+
+@api_router.post("/meta/test-connection")
+async def test_meta_connection(current_user: dict = Depends(get_current_user)):
+    """Test Meta Graph API connection with stored page token."""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    config = await db.settings.find_one({}, {"meta_page_token": 1, "meta_page_id": 1, "_id": 0})
+    token = (config or {}).get("meta_page_token", "")
+    page_id = (config or {}).get("meta_page_id", "")
+    if not token:
+        return {"success": False, "error": "No Page Access Token configured"}
+    
+    import httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            # Test the token by fetching page info
+            url = f"https://graph.facebook.com/v21.0/{page_id or 'me'}"
+            resp = await client.get(url, params={"access_token": token, "fields": "name,id"})
+            data = resp.json()
+            if "error" in data:
+                await db.settings.update_one({}, {"$set": {"meta_connected": False}})
+                return {"success": False, "error": data["error"].get("message", "Invalid token")}
+            await db.settings.update_one({}, {"$set": {"meta_connected": True, "meta_page_id": data.get("id", page_id)}})
+            return {"success": True, "page_name": data.get("name"), "page_id": data.get("id")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/meta/recent-leads")
+async def get_recent_meta_leads(current_user: dict = Depends(get_current_user)):
+    """Get recent webhook logs for Meta."""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    logs = await db.webhook_logs.find({"source": "meta"}).sort("received_at", -1).to_list(10)
+    return [{
+        "id": str(log["_id"]),
+        "received_at": log.get("received_at", ""),
+        "status": log.get("status", "received"),
+        "payload_preview": str(log.get("payload", {}))[:200]
+    } for log in logs]
+
 from fastapi.responses import PlainTextResponse
 from starlette.requests import Request as StarletteRequest
 

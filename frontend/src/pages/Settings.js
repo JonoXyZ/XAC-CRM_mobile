@@ -21,7 +21,11 @@ import {
   Trash,
   PencilSimple,
   ArrowsClockwise,
-  CurrencyCircleDollar
+  CurrencyCircleDollar,
+  Copy,
+  CheckCircle,
+  XCircle,
+  Lightning
 } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -210,6 +214,226 @@ const EarningsScaleEditor = ({ selectedUser: su, setSelectedUser: setSU }) => {
   );
 };
 
+
+const MetaIntegrationPanel = () => {
+  const [config, setConfig] = useState(null);
+  const [pageToken, setPageToken] = useState('');
+  const [pageId, setPageId] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [recentLogs, setRecentLogs] = useState([]);
+  const [showToken, setShowToken] = useState(false);
+
+  const fetchConfig = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`${API_URL}/api/meta/config`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setConfig(res.data);
+      setPageId(res.data.page_id || '');
+    } catch (error) { /* ignore */ }
+  }, []);
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`${API_URL}/api/meta/recent-leads`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setRecentLogs(res.data);
+    } catch (error) { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchConfig();
+    fetchLogs();
+  }, [fetchConfig, fetchLogs]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('token');
+      const updates = {};
+      if (pageToken.trim()) updates.page_token = pageToken.trim();
+      if (pageId.trim()) updates.page_id = pageId.trim();
+      await axios.put(`${API_URL}/api/meta/config`, updates, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Meta configuration saved');
+      setPageToken('');
+      setShowToken(false);
+      fetchConfig();
+    } catch (error) {
+      toast.error('Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`${API_URL}/api/meta/test-connection`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) {
+        toast.success(`Connected to: ${res.data.page_name} (ID: ${res.data.page_id})`);
+        fetchConfig();
+      } else {
+        toast.error(res.data.error || 'Connection failed');
+      }
+    } catch (error) {
+      toast.error('Connection test failed');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Copied to clipboard');
+  };
+
+  const webhookUrl = `${API_URL}/api/webhooks/meta`;
+  const verifyToken = config?.verify_token || 'xac_crm_meta_verify';
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start gap-4">
+        <div className="w-12 h-12 rounded-lg bg-blue-600/20 flex items-center justify-center shrink-0">
+          <Lightning size={28} weight="duotone" className="text-blue-400" />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-semibold text-zinc-100">Meta Lead Ads</h3>
+            {config?.connected ? (
+              <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full" data-testid="meta-connected-badge">
+                <CheckCircle size={12} weight="fill" /> Connected
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-xs font-bold text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full" data-testid="meta-disconnected-badge">
+                <XCircle size={12} /> Not Connected
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-zinc-400 mt-1">Auto-capture leads from Facebook & Instagram ads</p>
+        </div>
+      </div>
+
+      {/* Webhook URL & Verify Token - always visible */}
+      <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800 space-y-3">
+        <h4 className="text-xs tracking-wider uppercase font-bold text-zinc-500">Step 1: Add Webhook to Facebook</h4>
+        <div className="space-y-2">
+          <Label className="text-xs text-zinc-400">Webhook URL</Label>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-cyan-400 overflow-x-auto" data-testid="meta-webhook-url">
+              {webhookUrl}
+            </code>
+            <Button onClick={() => copyToClipboard(webhookUrl)} className="shrink-0 bg-zinc-800 hover:bg-zinc-700 p-2" data-testid="copy-webhook-url">
+              <Copy size={16} />
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs text-zinc-400">Verify Token</Label>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-cyan-400" data-testid="meta-verify-token">
+              {verifyToken}
+            </code>
+            <Button onClick={() => copyToClipboard(verifyToken)} className="shrink-0 bg-zinc-800 hover:bg-zinc-700 p-2" data-testid="copy-verify-token">
+              <Copy size={16} />
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-zinc-500">
+          Go to <strong className="text-zinc-300">Facebook Business Settings</strong> &rarr; <strong className="text-zinc-300">Webhooks</strong> &rarr; Subscribe to <strong className="text-zinc-300">leadgen</strong> events using the URL and token above.
+        </p>
+      </div>
+
+      {/* Page Access Token & Page ID */}
+      <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800 space-y-3">
+        <h4 className="text-xs tracking-wider uppercase font-bold text-zinc-500">Step 2: Connect Your Page</h4>
+        <div className="space-y-2">
+          <Label className="text-xs text-zinc-400">Page Access Token</Label>
+          {config?.page_token_set && !showToken ? (
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-400">
+                {config.page_token_masked}
+              </code>
+              <Button onClick={() => setShowToken(true)} className="shrink-0 bg-zinc-800 hover:bg-zinc-700 text-xs px-3" data-testid="change-token-button">
+                Change
+              </Button>
+            </div>
+          ) : (
+            <Input
+              type="password"
+              value={pageToken}
+              onChange={(e) => setPageToken(e.target.value)}
+              placeholder="EAAxxxxxx..."
+              data-testid="meta-page-token-input"
+              className="bg-zinc-900 border-zinc-800 text-zinc-50"
+            />
+          )}
+          <p className="text-xs text-zinc-600">
+            Get this from <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-cyan-500 hover:text-cyan-400 underline">Graph API Explorer</a> with <code>leads_retrieval</code> + <code>pages_read_engagement</code> permissions
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs text-zinc-400">Page ID (optional)</Label>
+          <Input
+            value={pageId}
+            onChange={(e) => setPageId(e.target.value)}
+            placeholder="123456789..."
+            data-testid="meta-page-id-input"
+            className="bg-zinc-900 border-zinc-800 text-zinc-50"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button
+            onClick={handleSave}
+            disabled={saving || (!pageToken.trim() && !pageId.trim())}
+            data-testid="meta-save-config"
+            className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500"
+          >
+            {saving ? 'Saving...' : 'Save Configuration'}
+          </Button>
+          <Button
+            onClick={handleTest}
+            disabled={testing || !config?.page_token_set}
+            data-testid="meta-test-connection"
+            className="flex-1 bg-cyan-600 text-white font-bold hover:bg-cyan-700"
+          >
+            {testing ? 'Testing...' : 'Test Connection'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Recent Webhook Activity */}
+      {recentLogs.length > 0 && (
+        <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800 space-y-3">
+          <h4 className="text-xs tracking-wider uppercase font-bold text-zinc-500 flex items-center gap-2">
+            Recent Webhook Activity
+            <Button onClick={fetchLogs} className="p-1 bg-zinc-800 hover:bg-zinc-700" data-testid="refresh-meta-logs">
+              <ArrowsClockwise size={12} />
+            </Button>
+          </h4>
+          <div className="space-y-2 max-h-40 overflow-y-auto">
+            {recentLogs.map((log) => (
+              <div key={log.id} className="flex items-center justify-between text-xs p-2 bg-zinc-900 rounded border border-zinc-800">
+                <span className="text-zinc-400">{new Date(log.received_at).toLocaleString()}</span>
+                <span className={`font-bold ${log.status === 'processed' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {log.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 
 const Settings = ({ user }) => {
@@ -503,26 +727,7 @@ const Settings = ({ user }) => {
             </Card>
 
             <Card className="stat-card p-6" data-testid="meta-integration-card">
-              <div className="flex items-start gap-4">
-                <FileText size={48} weight="duotone" className="text-cyan-500" />
-                <div className="flex-1">
-                  <h3 className="text-xl font-semibold text-zinc-100">Meta Lead Forms</h3>
-                  <p className="text-sm text-zinc-400 mt-1">
-                    Automatically capture leads from Facebook/Instagram ads
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-6 p-4 bg-zinc-950 rounded-md border border-zinc-800">
-                <h4 className="text-sm font-bold text-zinc-300 mb-3">Setup Instructions:</h4>
-                <ol className="space-y-2 text-sm text-zinc-400">
-                  <li>1. Go to Facebook Business Settings → Webhooks</li>
-                  <li>2. Subscribe to leadgen events</li>
-                  <li>3. Add webhook URL: <code className="bg-zinc-900 px-2 py-1 rounded">{API_URL}/api/webhooks/meta</code></li>
-                  <li>4. Set verify token: <code className="bg-zinc-900 px-2 py-1 rounded">xac_crm_meta_verify</code></li>
-                  <li>5. Test the connection from Facebook</li>
-                </ol>
-              </div>
+              <MetaIntegrationPanel />
             </Card>
 
             <Card className="stat-card p-6" data-testid="google-calendar-card">
