@@ -79,26 +79,6 @@ const Leads = ({ user }) => {
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [whatsappMessage, setWhatsappMessage] = useState('');
 
-  const handleDeleteLead = async (lead) => {
-    if (!window.confirm(`Delete lead "${lead.name}"? This will also remove associated deals, activities, and appointments.`)) return;
-    try {
-      const token = localStorage.getItem('token');
-      await axios.delete(`${API_URL}/api/leads/${lead.id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      toast.success('Lead deleted');
-      fetchLeads();
-    } catch (error) {
-      toast.error('Failed to delete lead');
-    }
-  };
-
-  useEffect(() => {
-    fetchLeads();
-    fetchUsers();
-    fetchMessageTemplates();
-  }, [fetchLeads, fetchUsers, fetchMessageTemplates]);
-
   const fetchMessageTemplates = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
@@ -136,6 +116,26 @@ const Leads = ({ user }) => {
       console.error('Failed to fetch users:', error);
     }
   }, []);
+
+  useEffect(() => {
+    fetchLeads();
+    fetchUsers();
+    fetchMessageTemplates();
+  }, [fetchLeads, fetchUsers, fetchMessageTemplates]);
+
+  const handleDeleteLead = async (lead) => {
+    if (!window.confirm(`Delete lead "${lead.name}"? This will also remove associated deals, activities, and appointments.`)) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API_URL}/api/leads/${lead.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Lead deleted');
+      fetchLeads();
+    } catch (error) {
+      toast.error('Failed to delete lead');
+    }
+  };
 
   const handleCreateLead = async (e) => {
     e.preventDefault();

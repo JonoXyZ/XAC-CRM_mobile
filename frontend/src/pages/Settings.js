@@ -683,14 +683,6 @@ const Settings = ({ user }) => {
     linked_consultants: []
   });
 
-  useEffect(() => {
-    if (user?.role === 'admin') {
-      fetchSettings();
-      fetchUsers();
-    }
-    fetchMessageTemplates();
-  }, [user, fetchSettings, fetchUsers, fetchMessageTemplates]);
-
   const fetchSettings = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
@@ -726,6 +718,14 @@ const Settings = ({ user }) => {
       console.error('Failed to fetch message templates:', error);
     }
   }, []);
+
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      fetchSettings();
+      fetchUsers();
+    }
+    fetchMessageTemplates();
+  }, [user, fetchSettings, fetchUsers, fetchMessageTemplates]);
 
   const handleUpdateSettings = async (updates) => {
     try {
