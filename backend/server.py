@@ -250,6 +250,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     return user
 
 async def get_next_consultant_for_assignment():
+    """Round-robin assignment using configurable order and leads-per-turn."""
+    settings = await db.settings.find_one({}, {"round_robin_config": 1, "round_robin_index": 1, "round_robin_turn_count": 1, "_id": 0})
+    rr_config = (settings or {}).get("round_robin_config", [])
+    
+    # Get active consultants
     consultants = await db.users.find({
         "role": UserRole.CONSULTANT,
         "active": True
@@ -258,16 +263,111 @@ async def get_next_consultant_for_assignment():
     if not consultants:
         return None
     
-    lead_counts = []
-    for consultant in consultants:
-        count = await db.leads.count_documents({
-            "owner_id": str(consultant["_id"]),
-            "stage": {"$nin": [LeadStage.CLOSED_WON, LeadStage.CLOSED_LOST]}
-        })
-        lead_counts.append({"consultant": consultant, "count": count})
+    consultant_map = {str(c["_id"]): c for c in consultants}
     
-    lead_counts.sort(key=lambda x: x["count"])
-    return lead_counts[0]["consultant"] if lead_counts else None
+    # Build ordered list from config (filter to active only)
+    if rr_config:
+        ordered = []
+        for entry in rr_config:
+            cid = entry.get("user_id")
+            if cid in consultant_map:
+                ordered.append({
+                    "consultant": consultant_map[cid],
+                    "leads_per_turn": entry.get("leads_per_turn", 1)
+                })
+        # Add any active consultants not in config at the end
+        for cid, c in consultant_map.items():
+            if not any(e["consultant"]["_id"] == c["_id"] for e in ordered):
+                ordered.append({"consultant": c, "leads_per_turn": 1})
+    else:
+        ordered = [{"consultant": c, "leads_per_turn": 1} for c in consultants]
+    
+    if not ordered:
+        return None
+    
+    # Get current position and turn count
+    rr_index = (settings or {}).get("round_robin_index", 0) % len(ordered)
+    turn_count = (settings or {}).get("round_robin_turn_count", 0)
+    
+    current = ordered[rr_index]
+    leads_per_turn = current["leads_per_turn"]
+    
+    # Check if current consultant has had their full turn
+    if turn_count >= leads_per_turn:
+        # Move to next consultant
+        rr_index = (rr_index + 1) % len(ordered)
+        turn_count = 0
+        current = ordered[rr_index]
+    
+    # Increment turn count and save
+    await db.settings.update_one({}, {"$set": {
+        "round_robin_index": rr_index,
+        "round_robin_turn_count": turn_count + 1
+    }}, upsert=True)
+    
+    return current["consultant"]
+
+@api_router.get("/round-robin/config")
+async def get_round_robin_config(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    settings = await db.settings.find_one({}, {"round_robin_config": 1, "round_robin_index": 1, "_id": 0})
+    rr_config = (settings or {}).get("round_robin_config", [])
+    rr_index = (settings or {}).get("round_robin_index", 0)
+    
+    # Get active consultants
+    consultants = await db.users.find({"role": UserRole.CONSULTANT, "active": True}).to_list(100)
+    consultant_map = {str(c["_id"]): {"id": str(c["_id"]), "name": c.get("name", "")} for c in consultants}
+    
+    # Build ordered list
+    ordered = []
+    seen = set()
+    for entry in rr_config:
+        cid = entry.get("user_id")
+        if cid in consultant_map:
+            ordered.append({
+                "user_id": cid,
+                "name": consultant_map[cid]["name"],
+                "leads_per_turn": entry.get("leads_per_turn", 1)
+            })
+            seen.add(cid)
+    # Add unconfigured active consultants
+    for cid, c in consultant_map.items():
+        if cid not in seen:
+            ordered.append({"user_id": cid, "name": c["name"], "leads_per_turn": 1})
+    
+    return {
+        "config": ordered,
+        "current_index": rr_index % len(ordered) if ordered else 0
+    }
+
+@api_router.put("/round-robin/config")
+async def update_round_robin_config(data: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    config = data.get("config", [])
+    # Validate
+    for entry in config:
+        if not entry.get("user_id") or not isinstance(entry.get("leads_per_turn", 1), int):
+            raise HTTPException(status_code=400, detail="Invalid config entry")
+        entry["leads_per_turn"] = max(1, entry["leads_per_turn"])
+    
+    await db.settings.update_one({}, {"$set": {
+        "round_robin_config": config,
+        "round_robin_index": 0,
+        "round_robin_turn_count": 0
+    }}, upsert=True)
+    
+    return {"success": True}
+
+@api_router.post("/round-robin/reset")
+async def reset_round_robin(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    await db.settings.update_one({}, {"$set": {"round_robin_index": 0, "round_robin_turn_count": 0}}, upsert=True)
+    return {"success": True}
 
 
 @api_router.get("/branding")

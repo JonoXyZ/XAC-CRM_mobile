@@ -716,6 +716,201 @@ const TallyIntegrationPanel = () => {
 };
 
 
+const RoundRobinPanel = () => {
+  const [config, setConfig] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const fetchConfig = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`${API_URL}/api/round-robin/config`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setConfig(res.data.config || []);
+      setCurrentIndex(res.data.current_index || 0);
+    } catch (error) {
+      console.error('Failed to load round robin config:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchConfig();
+  }, [fetchConfig]);
+
+  const moveConsultant = (index, direction) => {
+    const newConfig = [...config];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= newConfig.length) return;
+    [newConfig[index], newConfig[targetIndex]] = [newConfig[targetIndex], newConfig[index]];
+    setConfig(newConfig);
+  };
+
+  const updateLeadsPerTurn = (index, value) => {
+    const newConfig = [...config];
+    newConfig[index] = { ...newConfig[index], leads_per_turn: Math.max(1, parseInt(value) || 1) };
+    setConfig(newConfig);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`${API_URL}/api/round-robin/config`, {
+        config: config.map(c => ({ user_id: c.user_id, leads_per_turn: c.leads_per_turn }))
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success('Round robin configuration saved');
+      fetchConfig();
+    } catch (error) {
+      toast.error('Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!window.confirm('Reset round robin to start from the first consultant?')) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/api/round-robin/reset`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Round robin reset — starting from first consultant');
+      fetchConfig();
+    } catch (error) {
+      toast.error('Failed to reset');
+    }
+  };
+
+  if (loading) return <div className="text-center py-6 text-zinc-500">Loading...</div>;
+
+  const totalLeadsPerRound = config.reduce((sum, c) => sum + c.leads_per_turn, 0);
+
+  return (
+    <div className="space-y-4" data-testid="round-robin-panel">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-2xl font-bold text-zinc-100">Lead Round Robin</h3>
+          <p className="text-sm text-zinc-400 mt-1">
+            Control the order and number of leads each consultant receives
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            onClick={handleReset}
+            data-testid="reset-round-robin"
+            className="bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-xs px-3"
+          >
+            Reset Queue
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            data-testid="save-round-robin"
+            className="bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500 text-xs px-4"
+          >
+            {saving ? 'Saving...' : 'Save Order'}
+          </Button>
+        </div>
+      </div>
+
+      {config.length === 0 ? (
+        <div className="text-center py-8 text-zinc-500">
+          No active consultants found. Add consultants in User Management first.
+        </div>
+      ) : (
+        <>
+          <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-800 flex items-center justify-between">
+            <span className="text-xs text-zinc-500">Total leads per full round:</span>
+            <span className="text-sm font-bold text-lime-400">{totalLeadsPerRound}</span>
+          </div>
+
+          <div className="space-y-2">
+            {config.map((consultant, index) => (
+              <div
+                key={consultant.user_id}
+                data-testid={`rr-consultant-${consultant.user_id}`}
+                className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+                  index === currentIndex
+                    ? 'bg-lime-400/10 border-lime-400/30'
+                    : 'bg-zinc-950 border-zinc-800'
+                }`}
+              >
+                {/* Position number */}
+                <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
+                  <span className="text-sm font-bold text-zinc-300">{index + 1}</span>
+                </div>
+
+                {/* Name + active indicator */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-zinc-100 truncate">{consultant.name}</span>
+                    {index === currentIndex && (
+                      <span className="text-xs font-bold bg-lime-400 text-zinc-950 px-2 py-0.5 rounded-full shrink-0">
+                        Next Up
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Leads per turn */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <Label className="text-xs text-zinc-500 whitespace-nowrap">Leads/turn:</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={consultant.leads_per_turn}
+                    onChange={(e) => updateLeadsPerTurn(index, e.target.value)}
+                    data-testid={`rr-leads-${consultant.user_id}`}
+                    className="w-16 h-8 bg-zinc-900 border-zinc-700 text-zinc-50 text-center text-sm"
+                  />
+                </div>
+
+                {/* Up/Down buttons */}
+                <div className="flex flex-col gap-0.5 shrink-0">
+                  <button
+                    onClick={() => moveConsultant(index, -1)}
+                    disabled={index === 0}
+                    data-testid={`rr-up-${consultant.user_id}`}
+                    className={`p-1 rounded transition-colors ${
+                      index === 0 ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-400 hover:text-lime-400 hover:bg-zinc-800'
+                    }`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                  </button>
+                  <button
+                    onClick={() => moveConsultant(index, 1)}
+                    disabled={index === config.length - 1}
+                    data-testid={`rr-down-${consultant.user_id}`}
+                    className={`p-1 rounded transition-colors ${
+                      index === config.length - 1 ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-400 hover:text-lime-400 hover:bg-zinc-800'
+                    }`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="p-3 bg-zinc-900/50 rounded-lg border border-zinc-800/50">
+            <p className="text-xs text-zinc-500">
+              <strong className="text-zinc-400">How it works:</strong> Leads are assigned in order from top to bottom. 
+              Each consultant receives their "Leads/turn" number before passing to the next. 
+              After the last consultant, it loops back to the top.
+            </p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+
 const Settings = ({ user }) => {
   const [settings, setSettings] = useState(null);
   const [users, setUsers] = useState([]);
@@ -1241,6 +1436,10 @@ const Settings = ({ user }) => {
           {isAdmin && (
             <>
               <TabsContent value="automation" className="space-y-6">
+            <Card className="stat-card p-6" data-testid="round-robin-card">
+              <RoundRobinPanel />
+            </Card>
+
             <Card className="stat-card p-6" data-testid="automation-settings-card">
               <h3 className="text-2xl font-bold text-zinc-100 mb-4">Automation Rules</h3>
               <div className="space-y-6">
