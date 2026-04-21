@@ -2712,6 +2712,177 @@ async def form_webhook(form_id: str, payload: Dict[str, Any]):
     result = await db.leads.insert_one(lead_doc)
     return {"success": True, "lead_id": str(result.inserted_id)}
 
+# ==========================================
+# Tally Forms Webhook
+# ==========================================
+
+@api_router.post("/webhooks/tally")
+async def tally_webhook_receive(payload: Dict[str, Any]):
+    """Receive lead data from Tally form submissions."""
+    logger.info(f"Tally webhook received: {str(payload)[:500]}")
+    
+    # Store raw webhook for debugging
+    await db.webhook_logs.insert_one({
+        "source": "tally",
+        "payload": payload,
+        "received_at": datetime.now(timezone.utc).isoformat(),
+        "status": "processing"
+    })
+    
+    try:
+        event_type = payload.get("eventType", "")
+        if event_type != "FORM_RESPONSE":
+            return {"success": True, "message": "Non-submission event ignored"}
+        
+        data = payload.get("data", {})
+        fields = data.get("fields", [])
+        form_name = data.get("formName", "Tally Form")
+        form_id = data.get("formId", "")
+        response_id = data.get("responseId", "")
+        
+        # Build a lookup dict from fields by label (case-insensitive)
+        field_map = {}
+        for f in fields:
+            label = (f.get("label") or "").strip().lower()
+            value = f.get("value", "")
+            # Handle choice fields (value can be a list or object)
+            if isinstance(value, list):
+                value = ", ".join(str(v) for v in value)
+            elif isinstance(value, dict):
+                value = value.get("label", str(value))
+            field_map[label] = str(value) if value else ""
+        
+        # Extract lead fields with flexible matching
+        name = (
+            field_map.get("first name") or 
+            field_map.get("name") or 
+            field_map.get("full name") or 
+            field_map.get("first_name") or 
+            "Tally Lead"
+        )
+        surname = (
+            field_map.get("last name") or 
+            field_map.get("surname") or 
+            field_map.get("last_name") or 
+            ""
+        )
+        phone = (
+            field_map.get("phone number") or 
+            field_map.get("phone") or 
+            field_map.get("phone_number") or 
+            field_map.get("cell") or 
+            field_map.get("mobile") or 
+            field_map.get("whatsapp") or 
+            ""
+        )
+        email = (
+            field_map.get("email address") or 
+            field_map.get("email") or 
+            field_map.get("e-mail") or 
+            ""
+        ) or None
+        
+        # Collect all other fields as notes
+        extra_notes = []
+        skip_labels = {"first name", "name", "full name", "first_name", "last name", "surname", "last_name", 
+                       "phone number", "phone", "phone_number", "cell", "mobile", "whatsapp",
+                       "email address", "email", "e-mail"}
+        for f in fields:
+            label = (f.get("label") or "").strip()
+            label_lower = label.lower()
+            if label_lower not in skip_labels and f.get("value"):
+                value = f.get("value", "")
+                if isinstance(value, list):
+                    value = ", ".join(str(v) for v in value)
+                elif isinstance(value, dict):
+                    value = value.get("label", str(value))
+                if value:
+                    extra_notes.append(f"{label}: {value}")
+        
+        notes_str = " | ".join(extra_notes) if extra_notes else ""
+        
+        # Check for duplicate by response_id
+        if response_id:
+            existing = await db.leads.find_one({"notes": {"$regex": response_id}})
+            if existing:
+                await db.webhook_logs.update_one(
+                    {"source": "tally", "payload.data.responseId": response_id},
+                    {"$set": {"status": "duplicate"}}
+                )
+                return {"success": True, "message": "Duplicate submission"}
+        
+        consultant = await get_next_consultant_for_assignment()
+        
+        lead_doc = {
+            "name": name,
+            "surname": surname or None,
+            "email": email,
+            "phone": phone,
+            "source": f"Tally - {form_name}",
+            "campaign": form_name,
+            "stage": LeadStage.NEW_LEAD,
+            "owner_id": str(consultant["_id"]) if consultant else None,
+            "tags": ["tally", "auto-captured"],
+            "notes": f"Response ID: {response_id}" + (f" | {notes_str}" if notes_str else ""),
+            "form_answers": field_map,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "last_contact": None
+        }
+        
+        result = await db.leads.insert_one(lead_doc)
+        lead_id = str(result.inserted_id)
+        
+        # Log activity
+        await db.activities.insert_one({
+            "lead_id": lead_id,
+            "user_id": str(consultant["_id"]) if consultant else "system",
+            "activity_type": "lead_created",
+            "content": f"Lead captured from Tally — {form_name}",
+            "notes": notes_str or None,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        # Notify assigned consultant
+        if consultant:
+            await create_notification(
+                str(consultant["_id"]),
+                "tally_lead",
+                "New Tally Form Lead!",
+                f"{name} {surname} ({phone}) from {form_name}.",
+                lead_id
+            )
+        await notify_managers("tally_lead", "Tally Lead Captured", f"{name} {surname} — {phone} from {form_name}", lead_id)
+        
+        # Update webhook log status
+        await db.webhook_logs.update_one(
+            {"source": "tally", "payload.data.responseId": response_id},
+            {"$set": {"status": "processed"}}
+        )
+        
+        logger.info(f"Tally lead created: {name} {surname} - {phone} from {form_name}")
+        return {"success": True, "lead_id": lead_id}
+    
+    except Exception as e:
+        logger.error(f"Tally webhook processing error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/webhooks/tally/forms")
+async def get_tally_webhook_info(current_user: dict = Depends(get_current_user)):
+    """Get Tally webhook configuration info."""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    recent = await db.webhook_logs.find({"source": "tally"}).sort("received_at", -1).to_list(10)
+    return {
+        "webhook_url": "/api/webhooks/tally",
+        "recent_submissions": [{
+            "id": str(log["_id"]),
+            "received_at": log.get("received_at", ""),
+            "status": log.get("status", "received"),
+            "form_name": log.get("payload", {}).get("data", {}).get("formName", "Unknown")
+        } for log in recent]
+    }
+
 # Gallery / Media endpoints
 import base64
 

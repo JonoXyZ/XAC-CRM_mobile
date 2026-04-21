@@ -566,6 +566,98 @@ const MetaIntegrationPanel = () => {
 };
 
 
+const TallyIntegrationPanel = () => {
+  const [recentSubmissions, setRecentSubmissions] = useState([]);
+
+  const fetchTallyInfo = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`${API_URL}/api/webhooks/tally/forms`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setRecentSubmissions(res.data.recent_submissions || []);
+    } catch (error) { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchTallyInfo();
+  }, [fetchTallyInfo]);
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Copied to clipboard');
+  };
+
+  const webhookUrl = `${API_URL}/api/webhooks/tally`;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start gap-4">
+        <div className="w-12 h-12 rounded-lg bg-violet-600/20 flex items-center justify-center shrink-0">
+          <FileText size={28} weight="duotone" className="text-violet-400" />
+        </div>
+        <div className="flex-1">
+          <h3 className="text-xl font-semibold text-zinc-100">Tally Forms</h3>
+          <p className="text-sm text-zinc-400 mt-1">Auto-capture leads from your Tally form submissions</p>
+        </div>
+      </div>
+
+      <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800 space-y-3">
+        <h4 className="text-xs tracking-wider uppercase font-bold text-zinc-500">Setup — Add Webhook to Tally</h4>
+        <div className="space-y-2">
+          <Label className="text-xs text-zinc-400">Webhook URL</Label>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-violet-400 overflow-x-auto" data-testid="tally-webhook-url">
+              {webhookUrl}
+            </code>
+            <Button onClick={() => copyToClipboard(webhookUrl)} className="shrink-0 bg-zinc-800 hover:bg-zinc-700 p-2" data-testid="copy-tally-url">
+              <Copy size={16} />
+            </Button>
+          </div>
+        </div>
+        <div className="p-3 bg-violet-500/10 border border-violet-500/20 rounded-lg">
+          <p className="text-xs text-violet-300 font-semibold mb-2">How to connect:</p>
+          <ol className="text-xs text-zinc-400 space-y-1">
+            <li>1. Open your Tally form editor</li>
+            <li>2. Go to <strong className="text-zinc-200">Integrations</strong> tab</li>
+            <li>3. Click <strong className="text-zinc-200">Connect</strong> next to Webhooks</li>
+            <li>4. Paste the URL above as the <strong className="text-zinc-200">Endpoint URL</strong></li>
+            <li>5. Save — new submissions will appear as leads automatically</li>
+          </ol>
+        </div>
+        <p className="text-xs text-zinc-500">
+          Fields are auto-mapped: First Name, Phone Number, Email Address. Extra fields (Gender, Location, etc.) are saved in the lead notes.
+        </p>
+      </div>
+
+      {recentSubmissions.length > 0 && (
+        <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800 space-y-3">
+          <h4 className="text-xs tracking-wider uppercase font-bold text-zinc-500 flex items-center gap-2">
+            Recent Tally Submissions
+            <Button onClick={fetchTallyInfo} className="p-1 bg-zinc-800 hover:bg-zinc-700" data-testid="refresh-tally-logs">
+              <ArrowsClockwise size={12} />
+            </Button>
+          </h4>
+          <div className="space-y-2 max-h-40 overflow-y-auto">
+            {recentSubmissions.map((sub) => (
+              <div key={sub.id} className="flex items-center justify-between text-xs p-2 bg-zinc-900 rounded border border-zinc-800">
+                <div>
+                  <span className="text-zinc-300">{sub.form_name}</span>
+                  <span className="text-zinc-600 ml-2">{new Date(sub.received_at).toLocaleString()}</span>
+                </div>
+                <span className={`font-bold ${sub.status === 'processed' ? 'text-emerald-400' : sub.status === 'duplicate' ? 'text-amber-400' : 'text-zinc-400'}`}>
+                  {sub.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
 const Settings = ({ user }) => {
   const [settings, setSettings] = useState(null);
   const [users, setUsers] = useState([]);
@@ -858,6 +950,10 @@ const Settings = ({ user }) => {
 
             <Card className="stat-card p-6" data-testid="meta-integration-card">
               <MetaIntegrationPanel />
+            </Card>
+
+            <Card className="stat-card p-6" data-testid="tally-integration-card">
+              <TallyIntegrationPanel />
             </Card>
 
             <Card className="stat-card p-6" data-testid="google-calendar-card">

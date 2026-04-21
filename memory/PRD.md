@@ -22,6 +22,7 @@ Build "XAC CRM" - a full-stack gym-focused CRM for Revival Fitness. Key goals: l
 - **Lead Activity Timeline** — Click a lead name to see full detail modal with chronological activity log
 - **Meta Lead Ads Integration Panel** — In-app setup: webhook URL/token with copy buttons, Page Access Token, connection test, recent activity log
 - **Meta Lead Import** — Fetch historical leads by date range (Last 7/14/30/90 days or custom) from Facebook Lead Ad forms via Graph API
+- **Tally Forms Webhook** — Auto-capture leads from Tally form submissions with field mapping (Name, Phone, Email + extras in notes)
 - Meta/Facebook webhook lead capture (real-time)
 - Manual lead creation with round-robin assignment
 - Appointments calendar with time slots
