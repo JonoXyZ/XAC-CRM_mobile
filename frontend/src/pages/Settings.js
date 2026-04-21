@@ -223,6 +223,10 @@ const MetaIntegrationPanel = () => {
   const [saving, setSaving] = useState(false);
   const [recentLogs, setRecentLogs] = useState([]);
   const [showToken, setShowToken] = useState(false);
+  const [importFromDate, setImportFromDate] = useState('');
+  const [importToDate, setImportToDate] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -294,6 +298,43 @@ const MetaIntegrationPanel = () => {
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
     toast.success('Copied to clipboard');
+  };
+
+  const handleImportLeads = async () => {
+    if (!importFromDate || !importToDate) {
+      toast.error('Please select both From and To dates');
+      return;
+    }
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`${API_URL}/api/meta/import-leads`, {
+        from_date: importFromDate,
+        to_date: importToDate
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      setImportResult(res.data);
+      if (res.data.leads_imported > 0) {
+        toast.success(`Imported ${res.data.leads_imported} leads from Meta!`);
+      } else if (res.data.leads_skipped > 0) {
+        toast.info(`No new leads — ${res.data.leads_skipped} already existed`);
+      } else {
+        toast.info('No leads found for this date range');
+      }
+      fetchLogs();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to import leads');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const setQuickDateRange = (days) => {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+    setImportFromDate(from.toISOString().split('T')[0]);
+    setImportToDate(to.toISOString().split('T')[0]);
   };
 
   const webhookUrl = `${API_URL}/api/webhooks/meta`;
@@ -409,6 +450,95 @@ const MetaIntegrationPanel = () => {
           </Button>
         </div>
       </div>
+
+      {/* Import Historical Leads */}
+      {config?.page_token_set && (
+        <div className="p-4 bg-zinc-950 rounded-lg border border-zinc-800 space-y-3" data-testid="meta-import-section">
+          <h4 className="text-xs tracking-wider uppercase font-bold text-zinc-500">Import Leads from Meta</h4>
+          <p className="text-xs text-zinc-500">Pull historical leads from your Facebook Lead Ad forms by date range.</p>
+          
+          <div className="flex gap-2 mb-2">
+            <Button onClick={() => setQuickDateRange(7)} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1" data-testid="quick-7d">
+              Last 7 days
+            </Button>
+            <Button onClick={() => setQuickDateRange(14)} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1" data-testid="quick-14d">
+              Last 14 days
+            </Button>
+            <Button onClick={() => setQuickDateRange(30)} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1" data-testid="quick-30d">
+              Last 30 days
+            </Button>
+            <Button onClick={() => setQuickDateRange(90)} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1" data-testid="quick-90d">
+              Last 90 days
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-zinc-400">From Date</Label>
+              <Input
+                type="date"
+                value={importFromDate}
+                onChange={(e) => setImportFromDate(e.target.value)}
+                data-testid="import-from-date"
+                className="bg-zinc-900 border-zinc-800 text-zinc-50"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-zinc-400">To Date</Label>
+              <Input
+                type="date"
+                value={importToDate}
+                onChange={(e) => setImportToDate(e.target.value)}
+                data-testid="import-to-date"
+                className="bg-zinc-900 border-zinc-800 text-zinc-50"
+              />
+            </div>
+          </div>
+
+          <Button
+            onClick={handleImportLeads}
+            disabled={importing || !importFromDate || !importToDate}
+            data-testid="import-leads-button"
+            className="w-full bg-blue-600 text-white font-bold hover:bg-blue-700 flex items-center justify-center gap-2"
+          >
+            {importing ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                Importing from Meta...
+              </>
+            ) : (
+              <>
+                <Lightning size={18} weight="bold" />
+                Fetch Leads from Meta
+              </>
+            )}
+          </Button>
+
+          {importResult && (
+            <div className={`p-3 rounded-lg border ${importResult.leads_imported > 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-zinc-900 border-zinc-800'}`} data-testid="import-result">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-2xl font-black text-emerald-400">{importResult.leads_imported}</p>
+                  <p className="text-xs text-zinc-500">Imported</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-black text-amber-400">{importResult.leads_skipped}</p>
+                  <p className="text-xs text-zinc-500">Skipped (duplicates)</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-black text-zinc-400">{importResult.forms_checked}</p>
+                  <p className="text-xs text-zinc-500">Forms Checked</p>
+                </div>
+              </div>
+              {importResult.errors?.length > 0 && (
+                <div className="mt-2 text-xs text-red-400">
+                  {importResult.errors.map((err, i) => <p key={i}>{err}</p>)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recent Webhook Activity */}
       {recentLogs.length > 0 && (

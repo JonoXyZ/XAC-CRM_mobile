@@ -2325,6 +2325,169 @@ async def get_recent_meta_leads(current_user: dict = Depends(get_current_user)):
         "payload_preview": str(log.get("payload", {}))[:200]
     } for log in logs]
 
+@api_router.post("/meta/import-leads")
+async def import_meta_leads(data: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    """Import historical leads from Meta Lead Ads via Graph API."""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    config = await db.settings.find_one({}, {"meta_page_token": 1, "meta_page_id": 1, "_id": 0})
+    token = (config or {}).get("meta_page_token", "")
+    page_id = (config or {}).get("meta_page_id", "")
+    
+    if not token:
+        raise HTTPException(status_code=400, detail="No Page Access Token configured. Go to Settings → Integrations to add it.")
+    if not page_id:
+        raise HTTPException(status_code=400, detail="No Page ID configured. Save your Page ID or run Test Connection first.")
+    
+    from_date = data.get("from_date", "")
+    to_date = data.get("to_date", "")
+    
+    if not from_date or not to_date:
+        raise HTTPException(status_code=400, detail="Both from_date and to_date are required (YYYY-MM-DD)")
+    
+    import httpx
+    from datetime import datetime as dt
+    
+    # Convert dates to Unix timestamps for Meta API filtering
+    from_ts = int(dt.strptime(from_date, "%Y-%m-%d").timestamp())
+    to_ts = int(dt.strptime(to_date + " 23:59:59", "%Y-%m-%d %H:%M:%S").timestamp())
+    
+    leads_imported = 0
+    leads_skipped = 0
+    errors = []
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Step 1: Get all lead forms for this page
+            forms_url = f"https://graph.facebook.com/v21.0/{page_id}/leadgen_forms"
+            forms_resp = await client.get(forms_url, params={"access_token": token, "fields": "id,name,status", "limit": 100})
+            forms_data = forms_resp.json()
+            
+            if "error" in forms_data:
+                raise HTTPException(status_code=400, detail=f"Meta API error: {forms_data['error'].get('message', 'Unknown error')}")
+            
+            forms = forms_data.get("data", [])
+            logger.info(f"Found {len(forms)} lead forms for page {page_id}")
+            
+            # Step 2: For each form, fetch leads within the date range
+            for form in forms:
+                form_id = form["id"]
+                form_name = form.get("name", "Unknown Form")
+                
+                # Fetch leads with time filtering
+                leads_url = f"https://graph.facebook.com/v21.0/{form_id}/leads"
+                params = {
+                    "access_token": token,
+                    "fields": "id,created_time,field_data",
+                    "limit": 500,
+                    "filtering": f'[{{"field":"time_created","operator":"GREATER_THAN","value":"{from_ts}"}},{{"field":"time_created","operator":"LESS_THAN","value":"{to_ts}"}}]'
+                }
+                
+                next_url = None
+                page_num = 0
+                
+                while True:
+                    if next_url:
+                        resp = await client.get(next_url)
+                    else:
+                        resp = await client.get(leads_url, params=params)
+                    
+                    resp_data = resp.json()
+                    
+                    if "error" in resp_data:
+                        errors.append(f"Form '{form_name}': {resp_data['error'].get('message', 'Unknown')}")
+                        break
+                    
+                    leads_list = resp_data.get("data", [])
+                    page_num += 1
+                    logger.info(f"Form '{form_name}' page {page_num}: {len(leads_list)} leads")
+                    
+                    for meta_lead in leads_list:
+                        leadgen_id = meta_lead.get("id", "")
+                        
+                        # Check if already imported (by leadgen_id in notes)
+                        existing = await db.leads.find_one({"notes": {"$regex": leadgen_id}})
+                        if existing:
+                            leads_skipped += 1
+                            continue
+                        
+                        # Parse field_data
+                        field_data = meta_lead.get("field_data", [])
+                        lead_fields = {}
+                        for field in field_data:
+                            fname = field.get("name", "").lower()
+                            fvalues = field.get("values", [])
+                            fval = fvalues[0] if fvalues else ""
+                            lead_fields[fname] = fval
+                        
+                        name = lead_fields.get("full_name") or lead_fields.get("first_name") or lead_fields.get("name", "Facebook Lead")
+                        surname = lead_fields.get("last_name") or lead_fields.get("surname", "")
+                        email = lead_fields.get("email", "") or None
+                        phone = lead_fields.get("phone_number") or lead_fields.get("phone", "")
+                        
+                        consultant = await get_next_consultant_for_assignment()
+                        
+                        lead_doc = {
+                            "name": name,
+                            "surname": surname or None,
+                            "email": email or None,
+                            "phone": phone,
+                            "source": "Facebook Lead Ad",
+                            "campaign": form_name,
+                            "stage": LeadStage.NEW_LEAD,
+                            "owner_id": str(consultant["_id"]) if consultant else None,
+                            "tags": ["meta", "imported"],
+                            "notes": f"Leadgen ID: {leadgen_id} | Form: {form_name}",
+                            "form_answers": lead_fields,
+                            "created_at": meta_lead.get("created_time", datetime.now(timezone.utc).isoformat()),
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                            "last_contact": None
+                        }
+                        
+                        result = await db.leads.insert_one(lead_doc)
+                        leads_imported += 1
+                        
+                        # Log activity
+                        await db.activities.insert_one({
+                            "lead_id": str(result.inserted_id),
+                            "user_id": str(current_user["_id"]),
+                            "activity_type": "lead_created",
+                            "content": f"Imported from Meta — Form: {form_name}",
+                            "notes": None,
+                            "created_at": datetime.now(timezone.utc).isoformat()
+                        })
+                        
+                        # Notify assigned consultant
+                        if consultant:
+                            await create_notification(
+                                str(consultant["_id"]),
+                                "meta_lead",
+                                "New Facebook Lead (Imported)",
+                                f"{name} {surname} ({phone}) imported from {form_name}.",
+                                str(result.inserted_id)
+                            )
+                    
+                    # Check for pagination
+                    paging = resp_data.get("paging", {})
+                    next_url = paging.get("next")
+                    if not next_url or not leads_list:
+                        break
+        
+        return {
+            "success": True,
+            "leads_imported": leads_imported,
+            "leads_skipped": leads_skipped,
+            "forms_checked": len(forms),
+            "errors": errors
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Meta import error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 from fastapi.responses import PlainTextResponse
 from starlette.requests import Request as StarletteRequest
 
