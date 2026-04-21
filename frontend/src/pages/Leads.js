@@ -97,7 +97,7 @@ const Leads = ({ user }) => {
     fetchLeads();
     fetchUsers();
     fetchMessageTemplates();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchLeads, fetchUsers, fetchMessageTemplates]);
 
   const fetchMessageTemplates = useCallback(async () => {
     try {

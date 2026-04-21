@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
 import axios from 'axios';
 import Layout from '../components/Layout';
 import { Card } from '../components/ui/card';
@@ -25,15 +25,7 @@ const Commission = ({ user }) => {
 
   const isAdmin = user?.role === 'admin';
 
-  useEffect(() => {
-    if (isAdmin) {
-      fetchConsultants();
-    } else {
-      fetchCommission();
-    }
-  }, []);
-
-  const fetchConsultants = async () => {
+  const fetchConsultants = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const res = await axios.get(`${API_URL}/api/users`, {
@@ -43,16 +35,18 @@ const Commission = ({ user }) => {
       setConsultants(cons);
       if (cons.length > 0) {
         setSelectedConsultantId(cons[0].id);
-        fetchCommission(cons[0].id);
       } else {
         setLoading(false);
       }
-    } catch {
+      return cons;
+    } catch (error) {
+      toast.error('Failed to load consultants');
       setLoading(false);
+      return [];
     }
-  };
+  }, []);
 
-  const fetchCommission = async (consultantId) => {
+  const fetchCommissionData = useCallback(async (consultantId) => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
@@ -63,15 +57,25 @@ const Commission = ({ user }) => {
       setCommission(res.data);
       setGoalInput(res.data.income_goal ? String(res.data.income_goal) : '');
     } catch (error) {
-      console.error('Failed to fetch commission:', error);
+      toast.error('Failed to load commission data');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchConsultants().then(cons => {
+        if (cons.length > 0) fetchCommissionData(cons[0].id);
+      });
+    } else {
+      fetchCommissionData();
+    }
+  }, [isAdmin, fetchConsultants, fetchCommissionData]);
 
   const handleConsultantChange = (id) => {
     setSelectedConsultantId(id);
-    fetchCommission(id);
+    fetchCommissionData(id);
   };
 
   const handleSaveGoal = async () => {
@@ -85,8 +89,8 @@ const Commission = ({ user }) => {
         headers: { Authorization: `Bearer ${token}` }
       });
       toast.success('Income goal saved');
-      fetchCommission(isAdmin ? selectedConsultantId : undefined);
-    } catch {
+      fetchCommissionData(isAdmin ? selectedConsultantId : undefined);
+    } catch (error) {
       toast.error('Failed to save goal');
     } finally {
       setSavingGoal(false);

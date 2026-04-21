@@ -236,7 +236,7 @@ const MetaIntegrationPanel = () => {
       });
       setConfig(res.data);
       setPageId(res.data.page_id || '');
-    } catch (error) { /* ignore */ }
+    } catch (error) { console.error('Meta config fetch failed:', error); }
   }, []);
 
   const fetchLogs = useCallback(async () => {
@@ -246,7 +246,7 @@ const MetaIntegrationPanel = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRecentLogs(res.data);
-    } catch (error) { /* ignore */ }
+    } catch (error) { console.error('Meta logs fetch failed:', error); }
   }, []);
 
   useEffect(() => {
@@ -576,7 +576,7 @@ const TallyIntegrationPanel = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRecentSubmissions(res.data.recent_submissions || []);
-    } catch (error) { /* ignore */ }
+    } catch (error) { console.error('Tally info fetch failed:', error); }
   }, []);
 
   useEffect(() => {
@@ -689,7 +689,7 @@ const Settings = ({ user }) => {
       fetchUsers();
     }
     fetchMessageTemplates();
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, fetchSettings, fetchUsers, fetchMessageTemplates]);
 
   const fetchSettings = useCallback(async () => {
     try {
