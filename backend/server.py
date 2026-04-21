@@ -2288,7 +2288,7 @@ async def update_meta_config(data: Dict[str, Any], current_user: dict = Depends(
 
 @api_router.post("/meta/test-connection")
 async def test_meta_connection(current_user: dict = Depends(get_current_user)):
-    """Test Meta Graph API connection with stored page token."""
+    """Test Meta Graph API connection. Auto-detects page and converts User token to Page token."""
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin only")
     config = await db.settings.find_one({}, {"meta_page_token": 1, "meta_page_id": 1, "_id": 0})
@@ -2300,14 +2300,48 @@ async def test_meta_connection(current_user: dict = Depends(get_current_user)):
     import httpx
     try:
         async with httpx.AsyncClient() as client:
-            # Test the token by fetching page info
+            # First: fetch pages this token manages (works with User tokens)
+            pages_resp = await client.get(
+                "https://graph.facebook.com/v21.0/me/accounts",
+                params={"access_token": token, "fields": "id,name,access_token", "limit": 100}
+            )
+            pages_data = pages_resp.json()
+            
+            if "data" in pages_data and len(pages_data["data"]) > 0:
+                pages = pages_data["data"]
+                selected_page = None
+                
+                if page_id:
+                    selected_page = next((p for p in pages if p["id"] == page_id), None)
+                if not selected_page:
+                    selected_page = pages[0]
+                
+                page_access_token = selected_page.get("access_token", token)
+                actual_page_id = selected_page["id"]
+                page_name = selected_page.get("name", "Unknown Page")
+                
+                # Store the PAGE access token separately
+                await db.settings.update_one({}, {"$set": {
+                    "meta_connected": True,
+                    "meta_page_id": actual_page_id,
+                    "meta_page_access_token": page_access_token
+                }})
+                
+                all_pages = [{"id": p["id"], "name": p.get("name", "")} for p in pages]
+                return {"success": True, "page_name": page_name, "page_id": actual_page_id, "pages_found": all_pages}
+            
+            # Fallback: direct page query (already a page token)
             url = f"https://graph.facebook.com/v21.0/{page_id or 'me'}"
             resp = await client.get(url, params={"access_token": token, "fields": "name,id"})
             data = resp.json()
             if "error" in data:
                 await db.settings.update_one({}, {"$set": {"meta_connected": False}})
                 return {"success": False, "error": data["error"].get("message", "Invalid token")}
-            await db.settings.update_one({}, {"$set": {"meta_connected": True, "meta_page_id": data.get("id", page_id)}})
+            await db.settings.update_one({}, {"$set": {
+                "meta_connected": True,
+                "meta_page_id": data.get("id", page_id),
+                "meta_page_access_token": token
+            }})
             return {"success": True, "page_name": data.get("name"), "page_id": data.get("id")}
     except Exception as e:
         return {"success": False, "error": str(e)}
