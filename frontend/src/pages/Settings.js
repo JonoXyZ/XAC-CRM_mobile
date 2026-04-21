@@ -227,6 +227,7 @@ const MetaIntegrationPanel = () => {
   const [importToDate, setImportToDate] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [availablePages, setAvailablePages] = useState([]);
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -284,6 +285,11 @@ const MetaIntegrationPanel = () => {
       });
       if (res.data.success) {
         toast.success(`Connected to: ${res.data.page_name} (ID: ${res.data.page_id})`);
+        if (res.data.pages_found && res.data.pages_found.length > 1) {
+          setAvailablePages(res.data.pages_found);
+        } else {
+          setAvailablePages([]);
+        }
         fetchConfig();
       } else {
         toast.error(res.data.error || 'Connection failed');
@@ -292,6 +298,28 @@ const MetaIntegrationPanel = () => {
       toast.error('Connection test failed');
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleSelectPage = async (selectedPageId) => {
+    try {
+      const token = localStorage.getItem('token');
+      // Save the selected page ID, then re-run test to store the correct page token
+      await axios.put(`${API_URL}/api/meta/config`, { page_id: selectedPageId }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const res = await axios.post(`${API_URL}/api/meta/test-connection`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) {
+        toast.success(`Switched to: ${res.data.page_name}`);
+        setAvailablePages([]);
+        fetchConfig();
+      } else {
+        toast.error(res.data.error || 'Failed to switch page');
+      }
+    } catch (error) {
+      toast.error('Failed to switch page');
     }
   };
 
@@ -450,6 +478,36 @@ const MetaIntegrationPanel = () => {
           </Button>
         </div>
       </div>
+
+      {/* Page Selector - shown when multiple pages found */}
+      {availablePages.length > 1 && (
+        <div className="p-4 bg-zinc-950 rounded-lg border border-cyan-500/30 space-y-3" data-testid="meta-page-selector">
+          <h4 className="text-xs tracking-wider uppercase font-bold text-cyan-400">Select Your Page</h4>
+          <p className="text-xs text-zinc-400">Multiple pages found. Choose the one running your lead ads:</p>
+          <div className="space-y-2">
+            {availablePages.map((pg) => (
+              <button
+                key={pg.id}
+                onClick={() => handleSelectPage(pg.id)}
+                data-testid={`select-page-${pg.id}`}
+                className={`w-full flex items-center justify-between p-3 rounded-lg border text-left transition-all ${
+                  config?.page_id === pg.id 
+                    ? 'bg-lime-400/10 border-lime-400/30 text-lime-400' 
+                    : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-800'
+                }`}
+              >
+                <div>
+                  <p className="text-sm font-semibold">{pg.name}</p>
+                  <p className="text-xs text-zinc-500">ID: {pg.id}</p>
+                </div>
+                {config?.page_id === pg.id && (
+                  <span className="text-xs font-bold bg-lime-400 text-zinc-950 px-2 py-0.5 rounded-full">Active</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Import Historical Leads */}
       {config?.page_token_set && (
