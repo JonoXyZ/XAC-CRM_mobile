@@ -79,7 +79,7 @@ const Layout = ({ children, user }) => {
   return (
     <div className="flex min-h-screen bg-zinc-950">
       <aside
-        className="fixed left-0 top-0 h-screen w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col"
+        className="fixed left-0 top-0 h-screen w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col z-40"
         data-testid="sidebar"
       >
         <div className="h-16 flex items-center justify-center border-b border-zinc-800">
@@ -142,7 +142,7 @@ const Layout = ({ children, user }) => {
         </div>
       </aside>
 
-      <main className="ml-64 flex-1">
+      <main className="ml-64 flex-1 overflow-x-hidden">
         <div className="sticky top-0 z-30 h-14 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50 flex items-center justify-end px-6">
           <div className="flex items-center gap-4">
             <FetchLeadsButton />
