@@ -53,6 +53,7 @@ const Leads = ({ user }) => {
     surname: '',
     email: '',
     phone: '',
+    whatsapp_number: '',
     source: 'Manual',
     notes: ''
   });
@@ -75,6 +76,11 @@ const Leads = ({ user }) => {
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedLeadIds, setSelectedLeadIds] = useState([]);
+  const [showBulkReassignModal, setShowBulkReassignModal] = useState(false);
+  const [showBulkStageModal, setShowBulkStageModal] = useState(false);
+  const [bulkReassignTo, setBulkReassignTo] = useState('');
+  const [bulkStage, setBulkStage] = useState('');
   const [messageTemplates, setMessageTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [whatsappMessage, setWhatsappMessage] = useState('');
@@ -137,6 +143,74 @@ const Leads = ({ user }) => {
     }
   };
 
+  const toggleSelectLead = (leadId) => {
+    setSelectedLeadIds(prev => 
+      prev.includes(leadId) ? prev.filter(id => id !== leadId) : [...prev, leadId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedLeadIds.length === leads.length) {
+      setSelectedLeadIds([]);
+    } else {
+      setSelectedLeadIds(leads.map(l => l.id));
+    }
+  };
+
+  const handleBulkReassign = async () => {
+    if (!bulkReassignTo) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`${API_URL}/api/leads/bulk-action`, {
+        lead_ids: selectedLeadIds,
+        action: 'reassign',
+        owner_id: bulkReassignTo
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success(`${res.data.affected} leads reassigned`);
+      setSelectedLeadIds([]);
+      setShowBulkReassignModal(false);
+      setBulkReassignTo('');
+      fetchLeads();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to reassign');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Delete ${selectedLeadIds.length} leads? This also removes their deals, appointments, and activities.`)) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`${API_URL}/api/leads/bulk-action`, {
+        lead_ids: selectedLeadIds,
+        action: 'delete'
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success(`${res.data.affected} leads deleted`);
+      setSelectedLeadIds([]);
+      fetchLeads();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to delete');
+    }
+  };
+
+  const handleBulkStageChange = async () => {
+    if (!bulkStage) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`${API_URL}/api/leads/bulk-action`, {
+        lead_ids: selectedLeadIds,
+        action: 'update_stage',
+        stage: bulkStage
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success(`${res.data.affected} leads moved to ${bulkStage}`);
+      setSelectedLeadIds([]);
+      setShowBulkStageModal(false);
+      setBulkStage('');
+      fetchLeads();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to update stage');
+    }
+  };
+
   const handleCreateLead = async (e) => {
     e.preventDefault();
     try {
@@ -145,6 +219,7 @@ const Leads = ({ user }) => {
         ...newLead,
         email: newLead.email?.trim() || null,
         surname: newLead.surname?.trim() || null,
+        whatsapp_number: newLead.whatsapp_number?.trim() || null,
         notes: newLead.notes?.trim() || null,
       };
       await axios.post(`${API_URL}/api/leads`, payload, {
@@ -152,7 +227,7 @@ const Leads = ({ user }) => {
       });
       toast.success('Lead created successfully');
       setShowNewLeadModal(false);
-      setNewLead({ name: '', surname: '', email: '', phone: '', source: 'Manual', notes: '' });
+      setNewLead({ name: '', surname: '', email: '', phone: '', whatsapp_number: '', source: 'Manual', notes: '' });
       fetchLeads();
     } catch (error) {
       toast.error('Failed to create lead');
@@ -170,6 +245,7 @@ const Leads = ({ user }) => {
           surname: selectedLead.surname,
           email: selectedLead.email,
           phone: selectedLead.phone,
+          whatsapp_number: selectedLead.whatsapp_number || '',
           notes: selectedLead.notes
         },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -250,10 +326,10 @@ const Leads = ({ user }) => {
 
   const handleSendWhatsApp = (e) => {
     e.preventDefault();
-    if (!whatsappMessage.trim() || !selectedLead?.phone) return;
+    if (!whatsappMessage.trim() || (!selectedLead?.whatsapp_number && !selectedLead?.phone)) return;
     
-    // Clean phone number (remove spaces, dashes, ensure country code)
-    let phone = selectedLead.phone.replace(/[\s\-()]/g, '');
+    // Prefer whatsapp_number, fallback to phone
+    let phone = (selectedLead.whatsapp_number || selectedLead.phone || '').replace(/[\s\-()]/g, '');
     if (phone.startsWith('0')) phone = '27' + phone.substring(1); // SA country code
     if (!phone.startsWith('+') && !phone.startsWith('27')) phone = '27' + phone;
     phone = phone.replace('+', '');
@@ -390,6 +466,25 @@ const Leads = ({ user }) => {
             </Button>
           </div>
         </div>
+
+        {/* Bulk Action Bar */}
+        {user?.role === 'admin' && selectedLeadIds.length > 0 && (
+          <div className="mb-4 p-3 bg-lime-400/10 border border-lime-400/30 rounded-lg flex items-center gap-3" data-testid="bulk-action-bar">
+            <span className="text-sm font-bold text-lime-400">{selectedLeadIds.length} selected</span>
+            <Button onClick={() => setShowBulkReassignModal(true)} className="bg-cyan-600 text-white text-xs px-3 h-8 font-semibold hover:bg-cyan-700" data-testid="bulk-reassign-btn">
+              Reassign
+            </Button>
+            <Button onClick={() => setShowBulkStageModal(true)} className="bg-violet-600 text-white text-xs px-3 h-8 font-semibold hover:bg-violet-700" data-testid="bulk-stage-btn">
+              Change Stage
+            </Button>
+            <Button onClick={handleBulkDelete} className="bg-red-600 text-white text-xs px-3 h-8 font-semibold hover:bg-red-700" data-testid="bulk-delete-btn">
+              Delete
+            </Button>
+            <Button onClick={() => setSelectedLeadIds([])} className="bg-zinc-800 text-zinc-300 text-xs px-3 h-8 hover:bg-zinc-700" data-testid="bulk-clear-btn">
+              Clear
+            </Button>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-12 text-zinc-400">Loading leads...</div>
@@ -565,19 +660,29 @@ const Leads = ({ user }) => {
             <table className="w-full text-left text-sm">
               <thead className="bg-zinc-900/80 text-zinc-400 font-semibold uppercase text-xs">
                 <tr>
+                  {user?.role === 'admin' && (
+                    <th className="p-4 w-10">
+                      <input type="checkbox" checked={selectedLeadIds.length === leads.length && leads.length > 0} onChange={toggleSelectAll} className="rounded border-zinc-600 bg-zinc-800" data-testid="select-all-checkbox" />
+                    </th>
+                  )}
                   <th className="p-4">Name</th>
                   <th className="p-4">Phone</th>
+                  <th className="p-4">WhatsApp</th>
                   <th className="p-4">Email</th>
                   <th className="p-4">Source</th>
                   <th className="p-4">Owner</th>
-                  <th className="p-4">Score</th>
                   <th className="p-4">Stage</th>
                   <th className="p-4">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {leads.map((lead) => (
-                  <tr key={lead.id} className="border-t border-zinc-800/50 hover:bg-zinc-800/30" data-testid={`table-row-${lead.id}`}>
+                  <tr key={lead.id} className={`border-t border-zinc-800/50 hover:bg-zinc-800/30 ${selectedLeadIds.includes(lead.id) ? 'bg-lime-400/5' : ''}`} data-testid={`table-row-${lead.id}`}>
+                    {user?.role === 'admin' && (
+                      <td className="p-4 w-10">
+                        <input type="checkbox" checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleSelectLead(lead.id)} className="rounded border-zinc-600 bg-zinc-800" data-testid={`select-lead-${lead.id}`} />
+                      </td>
+                    )}
                     <td className="p-4 font-semibold text-zinc-100">
                       <span 
                         className="cursor-pointer hover:text-lime-400 transition-colors"
@@ -587,20 +692,11 @@ const Leads = ({ user }) => {
                         {lead.name} {lead.surname || ''}
                       </span>
                     </td>
-                    <td className="p-4 text-zinc-300">{lead.phone}</td>
+                    <td className="p-4 text-zinc-300">{lead.phone || '-'}</td>
+                    <td className="p-4 text-zinc-300">{lead.whatsapp_number || '-'}</td>
                     <td className="p-4 text-zinc-300">{lead.email || '-'}</td>
                     <td className="p-4 text-zinc-300">{lead.source}</td>
                     <td className="p-4 text-zinc-300">{lead.owner_name || '-'}</td>
-                    <td className="p-4">
-                      {lead.score > 0 ? (
-                        <div className="flex items-center gap-1">
-                          <Star size={16} weight="fill" className="text-amber-500" />
-                          <span className="font-semibold text-amber-500">{lead.score}</span>
-                        </div>
-                      ) : (
-                        <span className="text-zinc-600">-</span>
-                      )}
-                    </td>
                     <td className="p-4">
                       <Select
                         value={lead.stage}
@@ -734,6 +830,16 @@ const Leads = ({ user }) => {
                 onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })}
                 required
                 data-testid="new-lead-phone-input"
+                className="bg-zinc-950 border-zinc-800 text-zinc-50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">WhatsApp Number</Label>
+              <Input
+                value={newLead.whatsapp_number}
+                onChange={(e) => setNewLead({ ...newLead, whatsapp_number: e.target.value })}
+                placeholder="Leave empty if same as phone"
+                data-testid="new-lead-whatsapp-input"
                 className="bg-zinc-950 border-zinc-800 text-zinc-50"
               />
             </div>
@@ -1210,6 +1316,62 @@ const Leads = ({ user }) => {
         open={showDetailModal}
         onClose={() => setShowDetailModal(false)}
       />
+
+      {/* Bulk Reassign Modal */}
+      <Dialog open={showBulkReassignModal} onOpenChange={setShowBulkReassignModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="bulk-reassign-modal">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">Reassign {selectedLeadIds.length} Leads</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">Assign To</Label>
+              <Select value={bulkReassignTo} onValueChange={setBulkReassignTo}>
+                <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50" data-testid="bulk-reassign-select">
+                  <SelectValue placeholder="Select consultant" />
+                </SelectTrigger>
+                <SelectContent className="bg-zinc-900 border-zinc-800">
+                  {users.filter(u => u.role === 'consultant' && u.active).map(u => (
+                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-3">
+              <Button onClick={() => setShowBulkReassignModal(false)} className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700">Cancel</Button>
+              <Button onClick={handleBulkReassign} disabled={!bulkReassignTo} className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500" data-testid="confirm-bulk-reassign">Reassign</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Stage Change Modal */}
+      <Dialog open={showBulkStageModal} onOpenChange={setShowBulkStageModal}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-50" data-testid="bulk-stage-modal">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">Change Stage for {selectedLeadIds.length} Leads</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs tracking-wider uppercase font-bold text-zinc-500">New Stage</Label>
+              <Select value={bulkStage} onValueChange={setBulkStage}>
+                <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-50" data-testid="bulk-stage-select">
+                  <SelectValue placeholder="Select stage" />
+                </SelectTrigger>
+                <SelectContent className="bg-zinc-900 border-zinc-800">
+                  {STAGES.map(s => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-3">
+              <Button onClick={() => setShowBulkStageModal(false)} className="flex-1 bg-zinc-800 text-zinc-50 hover:bg-zinc-700">Cancel</Button>
+              <Button onClick={handleBulkStageChange} disabled={!bulkStage} className="flex-1 bg-lime-400 text-zinc-950 font-bold hover:bg-lime-500" data-testid="confirm-bulk-stage">Update Stage</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };

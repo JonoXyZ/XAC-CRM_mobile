@@ -137,6 +137,7 @@ class LeadCreate(BaseModel):
     surname: Optional[str] = None
     email: Optional[str] = None
     phone: str
+    whatsapp_number: Optional[str] = None
     source: str
     campaign: Optional[str] = None
     notes: Optional[str] = None
@@ -148,6 +149,7 @@ class LeadUpdate(BaseModel):
     surname: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    whatsapp_number: Optional[str] = None
     stage: Optional[str] = None
     owner_id: Optional[str] = None
     notes: Optional[str] = None
@@ -160,6 +162,7 @@ class LeadResponse(BaseModel):
     surname: Optional[str] = None
     email: Optional[str] = None
     phone: str
+    whatsapp_number: Optional[str] = None
     source: str
     campaign: Optional[str] = None
     stage: str
@@ -529,6 +532,7 @@ async def create_lead(lead_data: LeadCreate, current_user: dict = Depends(get_cu
         "surname": lead_data.surname or None,
         "email": lead_data.email or None,
         "phone": lead_data.phone,
+        "whatsapp_number": lead_data.whatsapp_number or None,
         "source": lead_data.source,
         "campaign": lead_data.campaign or None,
         "stage": LeadStage.NEW_LEAD,
@@ -627,7 +631,8 @@ async def get_leads(
             name=lead["name"],
             surname=lead.get("surname"),
             email=lead.get("email"),
-            phone=lead["phone"],
+            phone=lead.get("phone", ""),
+            whatsapp_number=lead.get("whatsapp_number"),
             source=lead["source"],
             campaign=lead.get("campaign"),
             stage=lead["stage"],
@@ -661,7 +666,8 @@ async def get_lead(lead_id: str, current_user: dict = Depends(get_current_user))
         name=lead["name"],
         surname=lead.get("surname"),
         email=lead.get("email"),
-        phone=lead["phone"],
+        phone=lead.get("phone", ""),
+        whatsapp_number=lead.get("whatsapp_number"),
         source=lead["source"],
         campaign=lead.get("campaign"),
         stage=lead["stage"],
@@ -779,6 +785,60 @@ async def reassign_lead(lead_id: str, new_owner_id: str, current_user: dict = De
     
     return {"success": True}
 
+@api_router.post("/leads/bulk-action")
+async def bulk_lead_action(data: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    """Bulk actions on leads: reassign, delete, or update stage."""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    lead_ids = data.get("lead_ids", [])
+    action = data.get("action", "")
+    
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail="No leads selected")
+    
+    object_ids = [validate_object_id(lid, "lead") for lid in lead_ids]
+    count = 0
+    
+    if action == "reassign":
+        new_owner_id = data.get("owner_id")
+        if not new_owner_id:
+            raise HTTPException(status_code=400, detail="owner_id required for reassign")
+        result = await db.leads.update_many(
+            {"_id": {"$in": object_ids}},
+            {"$set": {"owner_id": new_owner_id, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        count = result.modified_count
+        
+    elif action == "delete":
+        for lid in lead_ids:
+            await db.deals.delete_many({"lead_id": lid})
+            await db.activities.delete_many({"lead_id": lid})
+            await db.appointments.delete_many({"lead_id": lid})
+        result = await db.leads.delete_many({"_id": {"$in": object_ids}})
+        count = result.deleted_count
+        
+    elif action == "update_stage":
+        new_stage = data.get("stage")
+        if not new_stage:
+            raise HTTPException(status_code=400, detail="stage required")
+        result = await db.leads.update_many(
+            {"_id": {"$in": object_ids}},
+            {"$set": {"stage": new_stage, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        count = result.modified_count
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+    
+    await db.audit_logs.insert_one({
+        "action": f"bulk_{action}",
+        "user_id": str(current_user["_id"]),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "details": {"lead_ids": lead_ids, "count": count}
+    })
+    
+    return {"success": True, "affected": count}
+
 @api_router.post("/leads/fetch-check")
 async def fetch_check_leads(current_user: dict = Depends(get_current_user)):
     """Check all sources for new leads - Meta webhooks, pending imports, etc."""
@@ -795,7 +855,7 @@ async def fetch_check_leads(current_user: dict = Depends(get_current_user)):
                 for change in entry.get("changes", []):
                     value = change.get("value", {})
                     field_data = value.get("field_data", [])
-                    name, surname, phone, email = "Meta Lead", "", "", ""
+                    name, surname, phone, whatsapp, email = "Meta Lead", "", "", "", ""
                     lead_fields_raw = {}
                     for field in field_data:
                         fname = field.get("name", "").lower()
@@ -806,10 +866,15 @@ async def fetch_check_leads(current_user: dict = Depends(get_current_user)):
                             name = vals[0]
                         elif fname in ["last_name", "surname"] and vals:
                             surname = vals[0]
-                        elif fname in ["phone_number", "phone", "whatsapp_number", "whatsapp", "cell", "mobile"] and vals:
+                        elif fname in ["phone_number", "phone", "cell", "mobile"] and vals:
                             phone = vals[0]
+                        elif fname in ["whatsapp_number", "whatsapp"] and vals:
+                            whatsapp = vals[0]
                         elif fname in ["email", "email_address"] and vals:
                             email = vals[0]
+                    
+                    if not phone and whatsapp: phone = whatsapp
+                    if not whatsapp and phone: whatsapp = phone
                     
                     # Split full_name into name + surname if no separate surname
                     if not surname and name and " " in name:
@@ -831,6 +896,7 @@ async def fetch_check_leads(current_user: dict = Depends(get_current_user)):
                             "name": name,
                             "surname": surname or None,
                             "phone": phone,
+                            "whatsapp_number": whatsapp or None,
                             "email": email or None,
                             "source": "Facebook Lead Ad",
                             "stage": "New Lead",
@@ -2660,9 +2726,16 @@ async def import_meta_leads(data: Dict[str, Any], current_user: dict = Depends(g
                         name = lead_fields.get("full_name") or lead_fields.get("first_name") or lead_fields.get("name", "Facebook Lead")
                         surname = lead_fields.get("last_name") or lead_fields.get("surname", "")
                         email = lead_fields.get("email", "") or None
-                        phone = (lead_fields.get("phone_number") or lead_fields.get("phone") 
-                                or lead_fields.get("whatsapp_number") or lead_fields.get("whatsapp") 
-                                or lead_fields.get("cell") or lead_fields.get("mobile") or "")
+                        phone = lead_fields.get("phone_number") or lead_fields.get("phone") or ""
+                        whatsapp = lead_fields.get("whatsapp_number") or lead_fields.get("whatsapp") or ""
+                        # If only one exists, use it for both
+                        if not phone and whatsapp:
+                            phone = whatsapp
+                        if not whatsapp and phone:
+                            whatsapp = phone
+                        # Also check cell/mobile
+                        if not phone:
+                            phone = lead_fields.get("cell") or lead_fields.get("mobile") or ""
                         
                         # Split full_name into name + surname if no separate surname
                         if not surname and name and " " in name:
@@ -2677,6 +2750,7 @@ async def import_meta_leads(data: Dict[str, Any], current_user: dict = Depends(g
                             "surname": surname or None,
                             "email": email or None,
                             "phone": phone,
+                            "whatsapp_number": whatsapp or None,
                             "source": "Facebook Lead Ad",
                             "campaign": form_name,
                             "stage": LeadStage.NEW_LEAD,
@@ -2811,9 +2885,11 @@ async def meta_webhook_receive(payload: Dict[str, Any]):
                 name = lead_fields.get("full_name") or lead_fields.get("first_name") or lead_fields.get("name", "Facebook Lead")
                 surname = lead_fields.get("last_name") or lead_fields.get("surname", "")
                 email = lead_fields.get("email") or lead_fields.get("email_address", "") or None
-                phone = (lead_fields.get("phone_number") or lead_fields.get("phone") 
-                        or lead_fields.get("whatsapp_number") or lead_fields.get("whatsapp") 
-                        or lead_fields.get("cell") or lead_fields.get("mobile") or "")
+                phone = lead_fields.get("phone_number") or lead_fields.get("phone") or ""
+                whatsapp = lead_fields.get("whatsapp_number") or lead_fields.get("whatsapp") or ""
+                if not phone and whatsapp: phone = whatsapp
+                if not whatsapp and phone: whatsapp = phone
+                if not phone: phone = lead_fields.get("cell") or lead_fields.get("mobile") or ""
                 
                 # Split full_name into name + surname if no separate surname
                 if not surname and name and " " in name:
@@ -2828,6 +2904,7 @@ async def meta_webhook_receive(payload: Dict[str, Any]):
                     "surname": surname or None,
                     "email": email or None,
                     "phone": phone,
+                    "whatsapp_number": whatsapp or None,
                     "source": "Facebook Lead Ad",
                     "campaign": value.get("form_id") or payload.get("campaign", "Meta"),
                     "stage": LeadStage.NEW_LEAD,
