@@ -695,16 +695,27 @@ async def fetch_check_leads(current_user: dict = Depends(get_current_user)):
                 for change in entry.get("changes", []):
                     value = change.get("value", {})
                     field_data = value.get("field_data", [])
-                    name, phone, email = "Meta Lead", "", ""
+                    name, surname, phone, email = "Meta Lead", "", "", ""
+                    lead_fields_raw = {}
                     for field in field_data:
                         fname = field.get("name", "").lower()
                         vals = field.get("values", [])
-                        if fname in ["full_name", "name"] and vals:
+                        if vals:
+                            lead_fields_raw[fname] = vals[0]
+                        if fname in ["full_name", "name", "first_name"] and vals:
                             name = vals[0]
-                        elif fname in ["phone_number", "phone"] and vals:
+                        elif fname in ["last_name", "surname"] and vals:
+                            surname = vals[0]
+                        elif fname in ["phone_number", "phone", "whatsapp_number", "whatsapp", "cell", "mobile"] and vals:
                             phone = vals[0]
-                        elif fname in ["email"] and vals:
+                        elif fname in ["email", "email_address"] and vals:
                             email = vals[0]
+                    
+                    # Split full_name into name + surname if no separate surname
+                    if not surname and name and " " in name:
+                        parts = name.strip().split(" ", 1)
+                        name = parts[0]
+                        surname = parts[1] if len(parts) > 1 else ""
                     
                     existing = None
                     if phone or email:
@@ -718,11 +729,13 @@ async def fetch_check_leads(current_user: dict = Depends(get_current_user)):
                     if not existing:
                         lead_doc = {
                             "name": name,
+                            "surname": surname or None,
                             "phone": phone,
                             "email": email or None,
-                            "source": "Meta Ads",
+                            "source": "Facebook Lead Ad",
                             "stage": "New Lead",
                             "owner_id": None,
+                            "form_answers": lead_fields_raw,
                             "created_at": datetime.now(timezone.utc).isoformat(),
                             "notes": "Auto-imported from Meta fetch-check"
                         }
@@ -2547,7 +2560,15 @@ async def import_meta_leads(data: Dict[str, Any], current_user: dict = Depends(g
                         name = lead_fields.get("full_name") or lead_fields.get("first_name") or lead_fields.get("name", "Facebook Lead")
                         surname = lead_fields.get("last_name") or lead_fields.get("surname", "")
                         email = lead_fields.get("email", "") or None
-                        phone = lead_fields.get("phone_number") or lead_fields.get("phone", "")
+                        phone = (lead_fields.get("phone_number") or lead_fields.get("phone") 
+                                or lead_fields.get("whatsapp_number") or lead_fields.get("whatsapp") 
+                                or lead_fields.get("cell") or lead_fields.get("mobile") or "")
+                        
+                        # Split full_name into name + surname if no separate surname
+                        if not surname and name and " " in name:
+                            parts = name.strip().split(" ", 1)
+                            name = parts[0]
+                            surname = parts[1] if len(parts) > 1 else ""
                         
                         consultant = await get_next_consultant_for_assignment()
                         
@@ -2689,8 +2710,16 @@ async def meta_webhook_receive(payload: Dict[str, Any]):
                 
                 name = lead_fields.get("full_name") or lead_fields.get("first_name") or lead_fields.get("name", "Facebook Lead")
                 surname = lead_fields.get("last_name") or lead_fields.get("surname", "")
-                email = lead_fields.get("email", "") or None
-                phone = lead_fields.get("phone_number") or lead_fields.get("phone", "")
+                email = lead_fields.get("email") or lead_fields.get("email_address", "") or None
+                phone = (lead_fields.get("phone_number") or lead_fields.get("phone") 
+                        or lead_fields.get("whatsapp_number") or lead_fields.get("whatsapp") 
+                        or lead_fields.get("cell") or lead_fields.get("mobile") or "")
+                
+                # Split full_name into name + surname if no separate surname
+                if not surname and name and " " in name:
+                    parts = name.strip().split(" ", 1)
+                    name = parts[0]
+                    surname = parts[1] if len(parts) > 1 else ""
                 
                 consultant = await get_next_consultant_for_assignment()
                 
