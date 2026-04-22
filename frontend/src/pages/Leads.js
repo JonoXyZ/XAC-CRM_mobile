@@ -42,6 +42,7 @@ const Leads = ({ user }) => {
   const [leads, setLeads] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('kanban');
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
   const [showEditLeadModal, setShowEditLeadModal] = useState(false);
@@ -426,8 +427,20 @@ const Leads = ({ user }) => {
   };
 
   const getLeadsByStage = (stage) => {
-    return leads.filter(lead => lead.stage === stage);
+    return filteredLeads.filter(lead => lead.stage === stage);
   };
+
+  const filteredLeads = leads.filter(lead => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      (lead.name || '').toLowerCase().includes(q) ||
+      (lead.surname || '').toLowerCase().includes(q) ||
+      (lead.phone || '').includes(q) ||
+      (lead.whatsapp_number || '').includes(q) ||
+      (lead.email || '').toLowerCase().includes(q)
+    );
+  });
 
   return (
     <Layout user={user}>
@@ -465,6 +478,17 @@ const Leads = ({ user }) => {
               Add Lead
             </Button>
           </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="mb-4">
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by name, number, or email..."
+            data-testid="lead-search-input"
+            className="bg-zinc-900 border-zinc-800 text-zinc-50 max-w-md"
+          />
         </div>
 
         {/* Bulk Action Bar */}
@@ -676,7 +700,7 @@ const Leads = ({ user }) => {
                 </tr>
               </thead>
               <tbody>
-                {leads.map((lead) => (
+                {filteredLeads.map((lead) => (
                   <tr key={lead.id} className={`border-t border-zinc-800/50 hover:bg-zinc-800/30 ${selectedLeadIds.includes(lead.id) ? 'bg-lime-400/5' : ''}`} data-testid={`table-row-${lead.id}`}>
                     {user?.role === 'admin' && (
                       <td className="p-4 w-10">
